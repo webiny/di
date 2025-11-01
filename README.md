@@ -12,6 +12,49 @@ This is not a toy container for simple dependency wiring. **@webiny/di** is engi
 >
 > If your codebase doesn't use abstractions and follows an anemic domain model, a simpler DI solution may be more appropriate.
 
+## Table of Contents
+
+- [Features](#features)
+- [Who Should Use This](#who-should-use-this)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Core Concepts](#core-concepts)
+    - [Abstractions](#abstractions)
+    - [Implementations](#implementations)
+    - [Dependencies](#dependencies)
+- [Lifetime Scopes](#lifetime-scopes)
+    - [Transient (Default)](#transient-default)
+    - [Singleton](#singleton)
+- [Why @webiny/di?](#why-webinydi)
+    - [Built for SOLID Principles, Not Just Convenience](#built-for-solid-principles-not-just-convenience)
+    - [True Type Safety](#true-type-safety)
+    - [First-Class Decorator Pattern](#first-class-decorator-pattern)
+- [Comparison with Other Containers](#comparison-with-other-containers)
+- [Advanced Features](#advanced-features)
+    - [Decorator Pattern](#decorator-pattern)
+    - [Multiple Decorators](#multiple-decorators)
+    - [Composite Pattern](#composite-pattern)
+    - [Dependency Options](#dependency-options)
+    - [Hierarchical Containers](#hierarchical-containers)
+    - [Instance Registration](#instance-registration)
+    - [Factory Registration](#factory-registration)
+    - [Resolve All](#resolve-all)
+    - [Manual Resolution with Dependencies](#manual-resolution-with-dependencies)
+- [Type Safety](#type-safety)
+- [Real-World Example](#real-world-example)
+- [Best Practices](#best-practices)
+- [Error Handling](#error-handling)
+- [Testing](#testing)
+    - [Unit Testing with Mocks](#unit-testing-with-mocks)
+    - [Integration Testing with Container](#integration-testing-with-container)
+    - [Testing with Child Containers](#testing-with-child-containers)
+- [Philosophy](#philosophy)
+    - [There Are No "Plugins"](#there-are-no-plugins)
+    - [DI Containers Are Only Useful with SOLID](#di-containers-are-only-useful-with-solid)
+    - [Professional Tools for Professional Developers](#professional-tools-for-professional-developers)
+    - [We Choose Compile-Time Safety Over Runtime Flexibility](#we-choose-compile-time-safety-over-runtime-flexibility)
+- [Contributing](#contributing)
+
 ## Features
 
 - ✨ **True Type Safety**: Unlike other DI containers, type safety is enforced at compile-time. The `Abstraction<T>` class unifies tokens and types, making it impossible to resolve dependencies with incorrect types. No manual generic passing, no runtime surprises.
@@ -928,7 +971,7 @@ Some DI containers let you do anything at runtime. This library intentionally re
 We'd rather you hit a TypeScript error during development than a runtime error at 3 AM.
 
 
-## Support & Community
+## Contributing
 
 - 💬 Slack: [Join our community](https://webiny.com/slack)
 - 🐛 Issues: [GitHub Issues](https://github.com/webiny/di/issues)
