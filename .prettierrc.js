@@ -1,0 +1,6 @@
+export default {
+    printWidth: 100,
+    trailingComma: "none",
+    tabWidth: 2,
+    arrowParens: "avoid"
+};
