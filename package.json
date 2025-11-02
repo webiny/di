@@ -1,7 +1,7 @@
 {
   "name": "@webiny/di",
   "license": "MIT",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "main": "dist/index.js",
   "author": "Webiny Ltd.",
@@ -15,7 +15,9 @@
     "domain driven design"
   ],
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",
     "release": "pnpm run build && changeset publish",
