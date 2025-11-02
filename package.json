@@ -15,6 +15,7 @@
     "domain driven design"
   ],
   "types": "dist/index.d.ts",
+  "files": ["dist"],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",
     "release": "pnpm run build && changeset publish",
