@@ -5,6 +5,15 @@
   "type": "module",
   "main": "dist/index.js",
   "author": "Webiny Ltd.",
+  "keywords": [
+    "dependency injection",
+    "container",
+    "ioc",
+    "inversion of control",
+    "abstractions",
+    "solid",
+    "domain driven design"
+  ],
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",

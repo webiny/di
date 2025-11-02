@@ -10,7 +10,7 @@ This is not a toy container for simple dependency wiring. **@webiny/di** is engi
 > - **Open/Closed Principle** - Extending behavior through decoration, not modification
 > - **Interface Segregation** - Focused, cohesive abstractions
 >
-> If your codebase doesn't use abstractions and follows an anemic domain model, a simpler DI solution may be more appropriate.
+> If your codebase doesn't use abstractions, or you're simply using a Service Locator pattern, a simpler solution may be more appropriate.
 
 ## Table of Contents
 
@@ -50,7 +50,7 @@ This is not a toy container for simple dependency wiring. **@webiny/di** is engi
     - [Testing with Child Containers](#testing-with-child-containers)
 - [Philosophy](#philosophy)
     - [There Are No "Plugins"](#there-are-no-plugins)
-    - [DI Containers Are Only Useful with SOLID](#di-containers-are-only-useful-with-solid)
+    - [DI Containers Are Only Useful with SOLID](#di-containers-are-only-truly-useful-with-solid)
     - [Professional Tools for Professional Developers](#professional-tools-for-professional-developers)
     - [We Choose Compile-Time Safety Over Runtime Flexibility](#we-choose-compile-time-safety-over-runtime-flexibility)
 - [Contributing](#contributing)
@@ -79,7 +79,7 @@ npm install @webiny/di reflect-metadata
 **@webiny/di is for you if:**
 
 - ✅ You build applications using Clean Architecture or Hexagonal Architecture
-- ✅ You practice Domain-Driven Design with rich domain models
+- ✅ You practice Domain-Driven Design
 - ✅ You understand and apply SOLID principles rigorously
 - ✅ You need to extend system behavior through composition, not modification
 - ✅ You value compile-time safety over runtime flexibility
@@ -89,7 +89,6 @@ npm install @webiny/di reflect-metadata
 
 - ❌ You're looking for a quick way to wire up dependencies in a simple app
 - ❌ Your codebase uses concrete classes everywhere (no abstractions)
-- ❌ You follow an anemic domain model or transaction script pattern
 - ❌ You prefer runtime configuration over compile-time safety
 - ❌ You're building a prototype or MVP where architecture doesn't matter yet
 
