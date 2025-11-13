@@ -12,7 +12,7 @@ export class Abstraction<T> {
   public readonly token: symbol;
 
   constructor(name: string) {
-    this.token = Symbol.for(name);
+    this.token = Symbol(name);
   }
 
   toString(): string {
