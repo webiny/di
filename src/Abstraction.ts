@@ -9,6 +9,8 @@ type Implementation<A extends Abstraction<any>, I extends Constructor> = I & {
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export class Abstraction<T> {
+  // If the generic type is not used in any way, TS simply ignores it, thus breaking the desired type checking.
+  private readonly __type?: T;
   public readonly token: symbol;
 
   constructor(name: string) {

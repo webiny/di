@@ -193,6 +193,62 @@ describe("DIContainer", () => {
     expect(numberOfLogCalls).toBe(2);
   });
 
+  test("should resolve a composite wrapper using manual instances", () => {
+    let numberOfLogCalls = 0;
+
+    // For assertion purposes, we create a logger decorator.
+    class LoggerDecorator implements ILogger {
+      constructor(private decoratee: ILogger) {}
+
+      log(): void {
+        numberOfLogCalls++;
+      }
+    }
+
+    const loggerDecorator = createDecorator({
+      abstraction: LoggerAbstraction,
+      decorator: LoggerDecorator,
+      dependencies: []
+    });
+
+    const consoleLoggerImpl = createImplementation({
+      abstraction: LoggerAbstraction,
+      implementation: ConsoleLogger,
+      dependencies: []
+    });
+
+    const compositeImpl = createComposite({
+      abstraction: LoggerAbstraction,
+      implementation: CompositeLogger,
+      dependencies: [[LoggerAbstraction, { multiple: true }]]
+    });
+
+    rootContainer.register(consoleLoggerImpl);
+    rootContainer.registerDecorator(loggerDecorator);
+    rootContainer.registerComposite(compositeImpl);
+
+    rootContainer.registerInstance(LoggerAbstraction, new FileLogger());
+
+    class InjectionTest {
+      constructor(public logger: ILogger) {}
+
+      getLogger() {
+        return this.logger;
+      }
+    }
+
+    const testObject = rootContainer.resolveWithDependencies({
+      implementation: InjectionTest,
+      dependencies: [LoggerAbstraction]
+    });
+
+    const compositeLogger = testObject.getLogger();
+    expect(compositeLogger instanceof CompositeLogger).toBe(true);
+
+    compositeLogger.log("Composite log!");
+    expect(numberOfLogCalls).toBe(2);
+  });
+
   test("should resolve multiple singleton implementations of the same abstraction when multiple flag is used", () => {
     const consoleLoggerImpl = createImplementation({
       abstraction: LoggerAbstraction,

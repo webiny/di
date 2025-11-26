@@ -22,7 +22,7 @@
     "build": "tsup src/index.ts --format esm --dts",
     "release": "pnpm run build && changeset publish",
     "lint": "tsc",
-    "test": "vitest --run"
+    "test": "vitest --run --typecheck"
   },
   "dependencies": {
     "reflect-metadata": "^0.2.2"
