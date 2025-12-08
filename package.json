@@ -19,7 +19,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts",
+    "build": "rslib build",
     "release": "pnpm run build && changeset publish",
     "lint": "tsc",
     "test": "vitest --run --typecheck"
@@ -30,7 +30,7 @@
   "devDependencies": {
     "@changesets/cli": "^2.29.7",
     "prettier": "^3.6.2",
-    "tsup": "^8.5.0",
+    "@rslib/core": "^0.18.3",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"
   },
