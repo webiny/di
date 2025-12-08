@@ -1,5 +1,11 @@
 # @webiny/di
 
+## 0.2.2
+
+### Patch Changes
+
+- b1a4ef1: ensure generic type is preserved in Abstraction.d.ts when built
+
 ## 0.2.1
 
 ### Patch Changes
