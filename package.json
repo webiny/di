@@ -21,7 +21,10 @@
   "scripts": {
     "build": "rslib build",
     "release": "pnpm run build && changeset publish",
-    "lint": "tsc",
+    "lint": "tsc && pnpm run prettier:check",
+    "prettier": "prettier \"**/**/*.{ts,json}\" --config .prettierrc.json",
+    "prettier:fix": "pnpm run prettier --write",
+    "prettier:check": "pnpm run prettier --check",
     "test": "vitest --run --typecheck"
   },
   "dependencies": {

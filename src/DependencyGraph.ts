@@ -5,53 +5,53 @@ import { Metadata } from "./Metadata.js";
 import type { Implementation } from "./types.js";
 
 export class DependencyGraph {
-    private container: Container;
-    private readonly graph: Graph;
+  private container: Container;
+  private readonly graph: Graph;
 
-    constructor(container: Container) {
-        this.container = container;
-        this.graph = new Graph({ directed: true });
+  constructor(container: Container) {
+    this.container = container;
+    this.graph = new Graph({ directed: true });
+  }
+
+  buildGraph(rootImplementation: Implementation<any>): Graph {
+    const metadata = new Metadata(rootImplementation);
+    const rootAbstraction = metadata.getAbstraction();
+
+    if (!rootAbstraction) {
+      throw new Error("Root implementation is missing an abstraction.");
     }
 
-    buildGraph(rootImplementation: Implementation<any>): Graph {
-        const metadata = new Metadata(rootImplementation);
-        const rootAbstraction = metadata.getAbstraction();
+    const rootNodeId = this.getNodeId(rootImplementation);
+    this.graph.setNode(rootNodeId);
 
-        if (!rootAbstraction) {
-            throw new Error("Root implementation is missing an abstraction.");
-        }
+    // Start recursive dependency traversal
+    this.addDependencies(rootNodeId, rootImplementation);
 
-        const rootNodeId = this.getNodeId(rootImplementation);
-        this.graph.setNode(rootNodeId);
+    return this.graph;
+  }
 
-        // Start recursive dependency traversal
-        this.addDependencies(rootNodeId, rootImplementation);
+  private addDependencies(parentNodeId: string, implementation: Implementation<any>) {
+    const metadata = new Metadata(implementation);
+    const dependencies = metadata.getDependencies() || [];
 
-        return this.graph;
-    }
+    dependencies.forEach(dep => {
+      const [depAbstraction] = Array.isArray(dep) ? dep : [dep];
+      // @ts-expect-error TODO: fix token access
+      const depEntries = this.container["implementations"].get(depAbstraction.token) || [];
 
-    private addDependencies(parentNodeId: string, implementation: Implementation<any>) {
-        const metadata = new Metadata(implementation);
-        const dependencies = metadata.getDependencies() || [];
+      depEntries.forEach(depEntry => {
+        const depNodeId = this.getNodeId(depEntry.impl);
+        this.graph.setNode(depNodeId);
+        this.graph.setEdge(parentNodeId, depNodeId);
 
-        dependencies.forEach(dep => {
-            const [depAbstraction] = Array.isArray(dep) ? dep : [dep];
-            // @ts-expect-error TODO: fix token access
-            const depEntries = this.container["implementations"].get(depAbstraction.token) || [];
+        // Recurse to add further dependencies
+        this.addDependencies(depNodeId, depEntry.impl);
+      });
+    });
+  }
 
-            depEntries.forEach(depEntry => {
-                const depNodeId = this.getNodeId(depEntry.impl);
-                this.graph.setNode(depNodeId);
-                this.graph.setEdge(parentNodeId, depNodeId);
-
-                // Recurse to add further dependencies
-                this.addDependencies(depNodeId, depEntry.impl);
-            });
-        });
-    }
-
-    private getNodeId(implementation: Implementation<any>): string {
-        // Simplify node ID to only the implementation name
-        return implementation.name || "Unknown Implementation";
-    }
+  private getNodeId(implementation: Implementation<any>): string {
+    // Simplify node ID to only the implementation name
+    return implementation.name || "Unknown Implementation";
+  }
 }

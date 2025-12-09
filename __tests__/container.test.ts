@@ -7,7 +7,7 @@ import {
   isDecorator,
   createComposite,
   isComposite
-} from "~/index.js";
+} from "../src/index.js";
 // Mock implementations for testing
 interface ILogger {
   log(...args: unknown[]): void;
@@ -282,6 +282,69 @@ describe("DIContainer", () => {
     expect(manager.loggers.length).toBe(2);
     expect(manager.loggers.some(logger => logger instanceof ConsoleLogger)).toBe(true);
     expect(manager.loggers.some(logger => logger instanceof FileLogger)).toBe(true);
+  });
+
+  test("should resolve all implementations from all parent containers when `multiple: true` is used", () => {
+    const consoleLoggerImpl = createImplementation({
+      abstraction: LoggerAbstraction,
+      implementation: ConsoleLogger,
+      dependencies: []
+    });
+    const fileLoggerImpl = createImplementation({
+      abstraction: LoggerAbstraction,
+      implementation: FileLogger,
+      dependencies: []
+    });
+
+    const childContainer1 = rootContainer.createChildContainer();
+
+    rootContainer.register(consoleLoggerImpl).inSingletonScope();
+    childContainer1.register(fileLoggerImpl).inSingletonScope();
+
+    class LoggerManager {
+      constructor(public loggers: ILogger[]) {}
+    }
+
+    const managerAbstraction = new Abstraction<LoggerManager>("LoggerManager");
+
+    const managerImpl = createImplementation({
+      abstraction: managerAbstraction,
+      implementation: LoggerManager,
+      dependencies: [[LoggerAbstraction, { multiple: true }]]
+    });
+
+    const childContainer2 = childContainer1.createChildContainer();
+    childContainer2.register(managerImpl);
+
+    const manager = childContainer2.resolve(managerAbstraction);
+    expect(manager.loggers.length).toBe(2);
+    expect(manager.loggers.some(logger => logger instanceof ConsoleLogger)).toBe(true);
+    expect(manager.loggers.some(logger => logger instanceof FileLogger)).toBe(true);
+  });
+
+  test("should resolve all implementations from all parent containers when`resolveAll` is used", () => {
+    const consoleLoggerImpl = createImplementation({
+      abstraction: LoggerAbstraction,
+      implementation: ConsoleLogger,
+      dependencies: []
+    });
+    const fileLoggerImpl = createImplementation({
+      abstraction: LoggerAbstraction,
+      implementation: FileLogger,
+      dependencies: []
+    });
+
+    const childContainer1 = rootContainer.createChildContainer();
+
+    rootContainer.register(consoleLoggerImpl).inSingletonScope();
+    childContainer1.register(fileLoggerImpl).inSingletonScope();
+
+    const childContainer2 = childContainer1.createChildContainer();
+
+    const loggers = childContainer2.resolveAll(LoggerAbstraction);
+    expect(loggers.length).toBe(2);
+    expect(loggers.some(logger => logger instanceof ConsoleLogger)).toBe(true);
+    expect(loggers.some(logger => logger instanceof FileLogger)).toBe(true);
   });
 
   test("should apply decorators to implementation", () => {
