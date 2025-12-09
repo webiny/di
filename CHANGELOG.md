@@ -1,5 +1,11 @@
 # @webiny/di
 
+## 0.2.3
+
+### Patch Changes
+
+- 95db24e: resolve instances from all parent containers
+
 ## 0.2.2
 
 ### Patch Changes
