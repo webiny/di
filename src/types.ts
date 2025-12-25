@@ -10,7 +10,11 @@ export interface DependencyOptions {
   optional?: boolean;
 }
 
-export type Dependency = Abstraction<any> | [Abstraction<any>, DependencyOptions];
+export type Dependency =
+  | Abstraction<any>
+  | [Abstraction<any>, DependencyOptions]
+  | Constructor<any>
+  | [Constructor<any>, DependencyOptions];
 
 export interface Registration<T = any> {
   implementation: Constructor<T>;
@@ -58,11 +62,15 @@ export type MapDependencies<T extends [...any]> = {
     : // Requires a single implementation.
       T[K] extends IsOptionalValue<T[K]>
       ? // Support shorthand and long form.
-        [Abstraction<T[K]>, OptionalTrue & Partial<MultipleFalse>]
+          | [Abstraction<T[K]>, OptionalTrue & Partial<MultipleFalse>]
+          | [Constructor<T[K]>, OptionalTrue & Partial<MultipleFalse>]
       : // Support shorthand and long form.
-        | [Abstraction<T[K]>, MultipleFalse & Partial<OptionalFalse>]
+          | [Abstraction<T[K]>, MultipleFalse & Partial<OptionalFalse>]
           | [Abstraction<T[K]>]
-          | Abstraction<T[K]>;
+          | Abstraction<T[K]>
+          | [Constructor<T[K]>, MultipleFalse & Partial<OptionalFalse>]
+          | [Constructor<T[K]>]
+          | Constructor<T[K]>;
 };
 
 export type Dependencies<T> = T extends Constructor

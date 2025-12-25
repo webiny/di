@@ -137,10 +137,15 @@ export class Container {
   }
 
   private resolveInternal<T>(
-    abstraction: Abstraction<T>,
+    abstraction: Abstraction<T> | Constructor<T>,
     resolutionStack: Map<symbol, boolean>,
     options: DependencyOptions
   ): T {
+    // Handle constructor classes (dependency-only)
+    if (typeof abstraction === "function") {
+      return this.resolveDependencyOnly(abstraction, resolutionStack);
+    }
+
     if (resolutionStack.has(abstraction.token) && !options.multiple) {
       throw new Error(`Circular dependency detected for ${abstraction.toString()}`);
     }
@@ -294,6 +299,27 @@ export class Container {
     }
 
     return result;
+  }
+
+  private resolveDependencyOnly<T>(
+    constructor: Constructor<T>,
+    resolutionStack: Map<symbol, boolean>
+  ): T {
+    const metadata = new Metadata(constructor);
+    const dependencies = metadata.getDependencies();
+
+    if (!dependencies) {
+      throw new Error(
+        `${constructor.name} does not have dependency metadata. Use createDependency to define dependencies.`
+      );
+    }
+
+    const resolvedDeps = dependencies.map(dep => {
+      const [abstractionDep, depOptions] = Array.isArray(dep) ? dep : [dep, {}];
+      return this.resolveInternal(abstractionDep, new Map(resolutionStack), depOptions);
+    });
+
+    return new constructor(...resolvedDeps);
   }
 }
 

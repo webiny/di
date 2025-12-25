@@ -5,7 +5,8 @@ export const KEYS = {
   ABSTRACTION: "wby:abstraction",
   DEPENDENCIES: "wby:dependencies",
   IS_DECORATOR: "wby:isDecorator",
-  IS_COMPOSITE: "wby:isComposite"
+  IS_COMPOSITE: "wby:isComposite",
+  IS_DEPENDENCY: "wby:isDependency"
 };
 
 export class Metadata<T extends Constructor> {
