@@ -69,10 +69,15 @@ This is not a toy container for simple dependency wiring. **@webiny/di** is engi
 ## Installation
 
 ```bash
-npm install @webiny/di reflect-metadata
-```
+# with npm
+npm install @webiny/di
 
-> **Note**: This package requires `reflect-metadata` to be installed and imported at your application's entry point.
+# or with yarn
+yarn add @webiny/di
+
+# or with pnpm
+pnpm add @webiny/di
+```
 
 ## Who Should Use This
 
