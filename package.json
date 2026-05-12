@@ -31,11 +31,11 @@
     "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.29.7",
-    "prettier": "^3.6.2",
-    "@rslib/core": "^0.18.3",
-    "typescript": "^5.9.3",
-    "vitest": "^3.2.4"
+    "@changesets/cli": "^2.31.0",
+    "@rslib/core": "^0.21.4",
+    "prettier": "^3.8.3",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.6"
   },
   "engines": {
     "node": ">=22.0.0"
