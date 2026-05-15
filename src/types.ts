@@ -60,7 +60,7 @@ export type MapDependencies<T extends [...any]> = {
       ? // Support shorthand and long form.
         [Abstraction<T[K]>, OptionalTrue & Partial<MultipleFalse>]
       : // Support shorthand and long form.
-        | [Abstraction<T[K]>, MultipleFalse & Partial<OptionalFalse>]
+          | [Abstraction<T[K]>, MultipleFalse & Partial<OptionalFalse>]
           | [Abstraction<T[K]>]
           | Abstraction<T[K]>;
 };
