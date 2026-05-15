@@ -125,6 +125,29 @@ describe("Child Container - cross-container resolution", () => {
     expect(childService.getEmailClient()).toBeInstanceOf(SmtpEmailClient);
   });
 
+  test("great-grandchild resolves overrides spread across 4 levels", () => {
+    // parent:      NotificationService, NullLogger, NullEmailClient, NullTemplateEngine, NullAuditTrail
+    // child:       ConsoleLogger
+    // grandchild:  SmtpEmailClient
+    // greatGrand:  RealAuditTrail
+    // TemplateEngine is never overridden — must fall all the way back to parent.
+    const child = parentContainer.createChildContainer();
+    child.register(ConsoleLoggerImpl);
+
+    const grandchild = child.createChildContainer();
+    grandchild.register(SmtpEmailClientImpl);
+
+    const greatGrandchild = grandchild.createChildContainer();
+    greatGrandchild.register(RealAuditTrailImpl);
+
+    const service = greatGrandchild.resolve(NotificationService) as NotificationServiceImpl;
+
+    expect(service.getLogger()).toBeInstanceOf(ConsoleLogger);
+    expect(service.getEmailClient()).toBeInstanceOf(SmtpEmailClient);
+    expect(service.getAuditTrail()).toBeInstanceOf(RealAuditTrail);
+    expect(service.getTemplateEngine()).toBeInstanceOf(NullTemplateEngine);
+  });
+
   test("notify output reflects which implementations were resolved", () => {
     const child = parentContainer.createChildContainer();
     child.register(ConsoleLoggerImpl);
