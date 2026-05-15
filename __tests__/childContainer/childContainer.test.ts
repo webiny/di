@@ -1,29 +1,23 @@
-import { describe, test, expect, beforeEach } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 import { Container } from "../../src/index.js";
+import { NotificationService } from "./abstractions.js";
 import {
-  Logger,
-  EmailClient,
-  TemplateEngine,
-  NotificationService,
-  AuditTrail
-} from "./abstractions.js";
-import {
-  NullLoggerImpl,
-  NullEmailClientImpl,
-  NullTemplateEngineImpl,
-  NullAuditTrailImpl,
-  ConsoleLoggerImpl,
-  SmtpEmailClientImpl,
-  RealAuditTrailImpl,
-  NotificationServiceImplementation,
-  NotificationServiceImpl,
-  NullLogger,
-  NullEmailClient,
-  NullTemplateEngine,
-  NullAuditTrail,
   ConsoleLogger,
+  ConsoleLoggerImpl,
+  NotificationServiceImpl,
+  NotificationServiceImplementation,
+  NullAuditTrail,
+  NullAuditTrailImpl,
+  NullEmailClient,
+  NullEmailClientImpl,
+  NullLogger,
+  NullLoggerImpl,
+  NullTemplateEngine,
+  NullTemplateEngineImpl,
+  RealAuditTrail,
+  RealAuditTrailImpl,
   SmtpEmailClient,
-  RealAuditTrail
+  SmtpEmailClientImpl
 } from "./implementations.js";
 
 describe("Child Container - cross-container resolution", () => {

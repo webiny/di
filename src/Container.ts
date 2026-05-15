@@ -108,11 +108,11 @@ export class Container {
   }
 
   resolve<T>(abstraction: Abstraction<T>): T {
-    return this.resolveInternal(abstraction, new Map(), {});
+    return this.resolveInternal(abstraction, new Map(), {}, this);
   }
 
   resolveAll<T>(abstraction: Abstraction<T>): T[] {
-    return this.resolveMultiple(abstraction, new Map());
+    return this.resolveMultiple(abstraction, new Map(), this);
   }
 
   resolveWithDependencies<T extends Constructor>(config: {
@@ -124,7 +124,7 @@ export class Container {
 
     const resolvedDeps = dependencies.map(dep => {
       const [abstractionDep, depOptions] = Array.isArray(dep) ? dep : [dep, {}];
-      return this.resolveInternal(abstractionDep, new Map(), depOptions);
+      return this.resolveInternal(abstractionDep, new Map(), depOptions, this);
     });
 
     return new Constructor(...resolvedDeps);
@@ -139,19 +139,25 @@ export class Container {
   private resolveInternal<T>(
     abstraction: Abstraction<T>,
     resolutionStack: Map<symbol, boolean>,
-    options: DependencyOptions
+    options: DependencyOptions,
+    resolveFrom: Container
   ): T {
     if (resolutionStack.has(abstraction.token) && !options.multiple) {
       throw new Error(`Circular dependency detected for ${abstraction.toString()}`);
     }
 
-    const result = this.tryResolveFromCurrentContainer(abstraction, resolutionStack, options);
+    const result = this.tryResolveFromCurrentContainer(
+      abstraction,
+      resolutionStack,
+      options,
+      resolveFrom
+    );
     if (result !== undefined) {
       return result;
     }
 
     if (this.parent) {
-      return this.parent.resolveInternal(abstraction, resolutionStack, options);
+      return this.parent.resolveInternal(abstraction, resolutionStack, options, resolveFrom);
     }
 
     if (options.optional) {
@@ -164,13 +170,14 @@ export class Container {
   private tryResolveFromCurrentContainer<T>(
     abstraction: Abstraction<T>,
     resolutionStack: Map<symbol, boolean>,
-    options: DependencyOptions
+    options: DependencyOptions,
+    resolveFrom: Container
   ): T | undefined {
     const registrations = this.registrations.get(abstraction.token) || [];
     const instanceRegs = this.instanceRegistrations.get(abstraction.token) || [];
 
     if (options.multiple) {
-      return this.resolveMultiple(abstraction, resolutionStack) as T | undefined;
+      return this.resolveMultiple(abstraction, resolutionStack, resolveFrom) as T | undefined;
     }
 
     const composite = this.composites.get(abstraction.token);
@@ -179,7 +186,12 @@ export class Container {
 
       const resolvedDeps = composite.dependencies.map(dep => {
         const [abstractionDep, depOptions] = Array.isArray(dep) ? dep : [dep, {}];
-        return this.resolveInternal(abstractionDep, new Map(resolutionStack), depOptions);
+        return resolveFrom.resolveInternal(
+          abstractionDep,
+          new Map(resolutionStack),
+          depOptions,
+          resolveFrom
+        );
       });
 
       const instance = new composite.implementation(...resolvedDeps);
@@ -189,19 +201,19 @@ export class Container {
 
     if (instanceRegs.length > 0) {
       const instance = instanceRegs[instanceRegs.length - 1]?.instance;
-      return this.applyDecorators(abstraction, instance, resolutionStack);
+      return this.applyDecorators(abstraction, instance, resolutionStack, resolveFrom);
     }
 
     if (registrations.length > 0) {
       const registration = registrations[registrations.length - 1]!;
-      return this.resolveRegistration(abstraction, registration, resolutionStack);
+      return this.resolveRegistration(abstraction, registration, resolutionStack, resolveFrom);
     }
 
     const factories = this.factories.get(abstraction.token);
     if (factories && factories.length > 0) {
       const factory = factories[factories.length - 1]!;
       const instance = factory();
-      return this.applyDecorators(abstraction, instance, resolutionStack);
+      return this.applyDecorators(abstraction, instance, resolutionStack, resolveFrom);
     }
 
     return undefined;
@@ -210,7 +222,8 @@ export class Container {
   private resolveRegistration<T>(
     abstraction: Abstraction<T>,
     registration: Registration<T>,
-    resolutionStack: Map<symbol, boolean>
+    resolutionStack: Map<symbol, boolean>,
+    resolveFrom: Container
   ): T {
     const instanceKey = `${abstraction.token.toString()}::${registration.implementation.name}`;
     if (registration.scope === LifetimeScope.Singleton) {
@@ -224,11 +237,21 @@ export class Container {
 
     const resolvedDeps = registration.dependencies.map(dep => {
       const [abstractionDep, depOptions] = Array.isArray(dep) ? dep : [dep, {}];
-      return this.resolveInternal(abstractionDep, new Map(resolutionStack), depOptions);
+      return resolveFrom.resolveInternal(
+        abstractionDep,
+        new Map(resolutionStack),
+        depOptions,
+        resolveFrom
+      );
     });
 
     const instance = new registration.implementation(...resolvedDeps);
-    const decoratedInstance = this.applyDecorators(abstraction, instance, resolutionStack);
+    const decoratedInstance = this.applyDecorators(
+      abstraction,
+      instance,
+      resolutionStack,
+      resolveFrom
+    );
 
     if (registration.scope === LifetimeScope.Singleton) {
       this.instances.set(instanceKey, decoratedInstance);
@@ -240,13 +263,14 @@ export class Container {
 
   private resolveMultiple<T>(
     abstraction: Abstraction<T>,
-    resolutionStack: Map<symbol, boolean>
+    resolutionStack: Map<symbol, boolean>,
+    resolveFrom: Container
   ): T[] {
     const results: T[] = [];
 
     // First, collect from parent (if exists)
     if (this.parent) {
-      results.push(...this.parent.resolveMultiple(abstraction, resolutionStack));
+      results.push(...this.parent.resolveMultiple(abstraction, resolutionStack, resolveFrom));
     }
 
     // Then add from current container
@@ -256,20 +280,30 @@ export class Container {
 
     // Resolve instance registrations
     for (const instanceReg of instanceRegs) {
-      const decorated = this.applyDecorators(abstraction, instanceReg.instance, resolutionStack);
+      const decorated = this.applyDecorators(
+        abstraction,
+        instanceReg.instance,
+        resolutionStack,
+        resolveFrom
+      );
       results.push(decorated);
     }
 
     // Resolve class registrations
     for (const registration of registrations) {
-      const instance = this.resolveRegistration(abstraction, registration, resolutionStack);
+      const instance = this.resolveRegistration(
+        abstraction,
+        registration,
+        resolutionStack,
+        resolveFrom
+      );
       results.push(instance);
     }
 
     // Resolve factories
     for (const factory of factories) {
       const instance = factory();
-      const decorated = this.applyDecorators(abstraction, instance, resolutionStack);
+      const decorated = this.applyDecorators(abstraction, instance, resolutionStack, resolveFrom);
       results.push(decorated);
     }
 
@@ -279,7 +313,8 @@ export class Container {
   private applyDecorators<T>(
     abstraction: Abstraction<T>,
     instance: T,
-    resolutionStack: Map<symbol, boolean>
+    resolutionStack: Map<symbol, boolean>,
+    resolveFrom: Container
   ): T {
     const decorators = this.decorators.get(abstraction.token) || [];
     let result = instance;
@@ -287,7 +322,12 @@ export class Container {
     for (const decorator of decorators) {
       const decoratorDeps = decorator.dependencies.map(dep => {
         const [abstractionDep, depOptions] = Array.isArray(dep) ? dep : [dep, {}];
-        return this.resolveInternal(abstractionDep, new Map(resolutionStack), depOptions);
+        return resolveFrom.resolveInternal(
+          abstractionDep,
+          new Map(resolutionStack),
+          depOptions,
+          resolveFrom
+        );
       });
 
       result = new decorator.decoratorClass(...decoratorDeps, result);

@@ -90,3 +90,38 @@ registrations — never to recurse into dependencies.
 | grandchild inherits overrides through the chain            | FAIL   | Neither child nor grandchild overrides consulted         |
 | child override does not affect parent resolution           | FAIL   | Child resolution half is broken (parent half is correct) |
 | notify output reflects which implementations were resolved | FAIL   | Output contains Null\* names instead of real ones        |
+
+## Known Follow-Up: Singleton Scope with Child Overrides
+
+The `resolveFrom` fix correctly resolves transient dependencies from the originating child
+container. However, it introduces a subtle edge case with singletons registered in the parent.
+
+When a parent-registered singleton is first resolved through a child, the singleton instance is
+constructed using that child's dependency overrides and then cached in the parent. Any subsequent
+resolution of the same singleton — from a different child, or from the parent itself — returns the
+cached instance, which was built with the first child's dependencies.
+
+```
+Parent:
+  ServiceA (singleton) -> ServiceAImpl(Logger)
+  Logger               -> NullLogger
+
+Child1:
+  Logger -> ConsoleLogger
+
+Child2:
+  Logger -> FileLogger
+
+child1.resolve(ServiceA)  -> ServiceAImpl gets ConsoleLogger, cached in parent
+child2.resolve(ServiceA)  -> returns the SAME cached instance (with ConsoleLogger, not FileLogger)
+parent.resolve(ServiceA)  -> returns the SAME cached instance (with ConsoleLogger, not NullLogger)
+```
+
+This is not addressed by the current fix and should be tackled separately. Possible solutions:
+
+1. **Per-child singleton caches** — each child maintains its own singleton cache for
+   parent-registered singletons, keyed by the originating container.
+2. **Prohibit singleton + child override** — throw an error if a child attempts to override a
+   dependency of a parent-registered singleton.
+3. **Document as expected** — singletons are shared by design; if you need per-child instances,
+   use transient scope or register the service in the child directly.
