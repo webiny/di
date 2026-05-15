@@ -1,5 +1,11 @@
 # @webiny/di
 
+## 1.0.0
+
+### Major Changes
+
+- ffef059: fix: resolve child container dependencies from the originating container
+
 ## 0.2.3
 
 ### Patch Changes
