@@ -1,5 +1,5 @@
 ---
-"@webiny/di": patch
+"@webiny/di": major
 ---
 
 fix: resolve child container dependencies from the originating container
