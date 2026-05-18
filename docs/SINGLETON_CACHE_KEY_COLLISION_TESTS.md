@@ -95,6 +95,51 @@ Register three minified singletons in the root container. Create a chain: root �
 - Adding a new minified singleton at the grandchild level: greatGrandchild sees 4 implementations, child sees 3, root sees 3
 - The grandchild-level singleton is a distinct instance from the root-level ones
 
+## Coverage Gaps
+
+Current coverage: 89.88% statements, 81.7% branches. The following lines are uncovered and should be addressed by the tests above or by additional general tests.
+
+### `Container.ts`
+
+| Lines   | Method                           | What's missing                                                                          |
+| ------- | -------------------------------- | --------------------------------------------------------------------------------------- |
+| 59-61   | `registerFactory`                | Registration path — no test calls `registerFactory` and resolves via single `resolve()` |
+| 212-216 | `tryResolveFromCurrentContainer` | Factory fallback — when no class or instance registration exists, falls back to factory |
+| 302-306 | `resolveMultiple`                | Factory iteration in `resolveAll` — factories are never tested with `multiple: true`    |
+
+### `Abstraction.ts`
+
+| Lines | Method                          | What's missing                                                                                   |
+| ----- | ------------------------------- | ------------------------------------------------------------------------------------------------ |
+| 52-61 | `Abstraction.createComposite()` | Tests use the standalone `createComposite()` function, never the method on the Abstraction class |
+
+### Proposed additional tests
+
+#### 9. `withFactory.test.ts` (new — general coverage, not minification-specific)
+
+Register three factories via `registerFactory` for the same abstraction. Each factory returns an object with a distinct marker.
+
+**Assertions:**
+
+- `resolve` returns the last registered factory's result
+- `resolveAll` returns results from all three factories
+- Decorators are applied to factory-produced instances
+- Factories in parent container are accessible from child container
+- Factories work alongside class registrations and instance registrations in `resolveAll`
+
+This covers Container.ts lines 59-61, 212-216, and 302-306.
+
+#### 10. `withAbstractionCreateComposite.test.ts` (new — general coverage)
+
+Use `Abstraction.createComposite()` instead of the standalone `createComposite()` function.
+
+**Assertions:**
+
+- Composite created via `abstraction.createComposite()` resolves the same as one created via `createComposite()`
+- Composite aggregates all registered implementations
+
+This covers Abstraction.ts lines 52-61.
+
 ## File Structure
 
 ```
@@ -109,4 +154,6 @@ __tests__/singletonCacheKeyCollision/
   withComposite.test.ts
   withResolveWithDependencies.test.ts
   withDeepHierarchy.test.ts
+  withFactory.test.ts
+  withAbstractionCreateComposite.test.ts
 ```
