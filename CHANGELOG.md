@@ -1,5 +1,11 @@
 # @webiny/di
 
+## 1.0.1
+
+### Patch Changes
+
+- b1cfedb: fix: multiple singleton implementations of the same abstraction now resolve correctly in minified/production builds
+
 ## 1.0.0
 
 ### Major Changes
