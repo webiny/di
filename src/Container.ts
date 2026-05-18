@@ -15,7 +15,7 @@ import { isDecorator } from "./isDecorator.js";
 export class Container {
   private registrations = new Map<symbol, Registration[]>();
   private decorators = new Map<symbol, DecoratorRegistration[]>();
-  private instances = new Map<string, any>();
+  private instances = new Map<Registration, any>();
   private factories = new Map<symbol, (() => any)[]>();
   private instanceRegistrations = new Map<symbol, InstanceRegistration[]>();
   private composites = new Map<symbol, Registration>();
@@ -225,9 +225,8 @@ export class Container {
     resolutionStack: Map<symbol, boolean>,
     resolveFrom: Container
   ): T {
-    const instanceKey = `${abstraction.token.toString()}::${registration.implementation.name}`;
     if (registration.scope === LifetimeScope.Singleton) {
-      const existing = this.instances.get(instanceKey);
+      const existing = this.instances.get(registration);
       if (existing) {
         return existing;
       }
@@ -254,7 +253,7 @@ export class Container {
     );
 
     if (registration.scope === LifetimeScope.Singleton) {
-      this.instances.set(instanceKey, decoratedInstance);
+      this.instances.set(registration, decoratedInstance);
     }
 
     resolutionStack.delete(abstraction.token);
