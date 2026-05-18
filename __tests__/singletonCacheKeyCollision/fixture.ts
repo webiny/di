@@ -1,4 +1,4 @@
-import { Container, Abstraction, createImplementation } from "../../../../src/index";
+import { Container, Abstraction, createImplementation } from "../../src/index";
 
 interface IPlugin {
   name: string;

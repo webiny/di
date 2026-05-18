@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach } from "vitest";
-import { Container, Abstraction, createImplementation } from "../../src/index.js";
+import { Container } from "../../src/index.js";
 import { PluginAbstraction, PluginRegistryAbstraction } from "./abstractions.js";
 import {
   AuthPlugin,
@@ -74,66 +74,5 @@ describe("Plugin Registry - Singleton Scope", () => {
     const results = registry.executeAll();
 
     expect(results).toEqual(["auth:executed", "cache:executed", "logging:executed"]);
-  });
-});
-
-describe("Plugin Registry - minified class names", () => {
-  test("singleton implementations with identical class names resolve to distinct instances", () => {
-    interface IService {
-      id(): string;
-    }
-
-    const ServiceAbstraction = new Abstraction<IService>("Service");
-
-    // Simulate rspack minification: all classes share the same name "a".
-    const ServiceA = { value: "a" };
-    const ServiceB = { value: "b" };
-    const ServiceC = { value: "c" };
-
-    function makeImpl(marker: { value: string }) {
-      class a implements IService {
-        id(): string {
-          return marker.value;
-        }
-      }
-      return a;
-    }
-
-    const ImplA = makeImpl(ServiceA);
-    const ImplB = makeImpl(ServiceB);
-    const ImplC = makeImpl(ServiceC);
-
-    // All three classes have name "a"
-    expect(ImplA.name).toBe("a");
-    expect(ImplB.name).toBe("a");
-    expect(ImplC.name).toBe("a");
-
-    const RegA = createImplementation({
-      abstraction: ServiceAbstraction,
-      implementation: ImplA,
-      dependencies: []
-    });
-    const RegB = createImplementation({
-      abstraction: ServiceAbstraction,
-      implementation: ImplB,
-      dependencies: []
-    });
-    const RegC = createImplementation({
-      abstraction: ServiceAbstraction,
-      implementation: ImplC,
-      dependencies: []
-    });
-
-    const container = new Container();
-    container.register(RegA).inSingletonScope();
-    container.register(RegB).inSingletonScope();
-    container.register(RegC).inSingletonScope();
-
-    const all = container.resolveAll(ServiceAbstraction);
-
-    expect(all).toHaveLength(3);
-    expect(all[0]!.id()).toBe("a");
-    expect(all[1]!.id()).toBe("b");
-    expect(all[2]!.id()).toBe("c");
   });
 });

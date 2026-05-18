@@ -52,7 +52,8 @@ container.resolveAll(abstraction);
 
 ## Failing Test
 
-`__tests__/registry/registry.test.ts` — test case: "singleton implementations with identical class names resolve to distinct instances"
+- `__tests__/singletonCacheKeyCollision/simulated.test.ts` — simulates minified class names
+- `__tests__/singletonCacheKeyCollision/rspackMinified.test.ts` — bundles with real rspack and executes
 
 ## Impact
 
