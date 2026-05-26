@@ -129,9 +129,11 @@ These tests need updating to assert **behavioral equivalence** (same dependencie
 
 ### `__tests__/childContainer/childContainer.test.ts`
 
-These tests use **transient** registrations (no `.inSingletonScope()`), so they are unaffected by this change.
+These tests use **transient** registrations (no `.inSingletonScope()`), so they are unaffected by this change. However, singleton variants of every scenario must be added to guarantee the same cross-resolution behavior holds under singleton scoping. The existing transient tests remain as-is.
 
 ## New Tests
+
+### Singleton bleed-through tests (ProductRegistry pattern)
 
 1. **No upward bleed**: Parent singleton is not polluted when child resolves first with additional `{ multiple: true }` registrations
 2. **Child inherits + extends**: Child's singleton includes parent registrations + own registrations
@@ -139,6 +141,18 @@ These tests use **transient** registrations (no `.inSingletonScope()`), so they 
 4. **Deep hierarchy**: Grandchild sees parent + child + own registrations in its singleton
 5. **Same-container identity**: Resolving a singleton twice from the same container returns the same instance
 6. **Simple singletons**: Singletons without `{ multiple: true }` deps produce per-container instances with equivalent behavior
+
+### Singleton variants of child container cross-resolution tests
+
+Mirror the existing `childContainer.test.ts` scenarios but with `.inSingletonScope()` on the `NotificationService` registration. These verify that the `resolveFrom` passthrough still correctly resolves overridden dependencies when singletons are involved:
+
+7. **Parent resolves all null implementations (singleton)**: Parent singleton NotificationService resolves all parent deps
+8. **Child overrides some deps (singleton)**: Child resolves parent's singleton NotificationService — overridden deps (Logger, EmailClient) come from child, rest from parent. Parent's singleton is unaffected.
+9. **Child overrides all deps (singleton)**: Same as above but all deps overridden in child
+10. **Child overrides no deps (singleton)**: Child resolves parent's singleton with no overrides — gets equivalent instance with all parent deps
+11. **Grandchild inherits overrides through the chain (singleton)**: Grandchild resolves singleton with overrides spread across child and grandchild levels
+12. **Child override does not affect parent resolution (singleton)**: After child resolves singleton with overrides, parent resolves its own singleton — must see only parent deps
+13. **Great-grandchild resolves overrides spread across 4 levels (singleton)**: Singleton resolved from a great-grandchild picks up overrides from every level in the hierarchy
 
 ## Documentation Updates
 
