@@ -6,9 +6,9 @@ strictDepBuilds: true
 
 # Control script permissions explicitly
 allowBuilds:
-  core-js: false       # Strongly recommended to keep false (frequent target)
-  esbuild: true        # Allowed (required for esbuild to compile its binary)
-  node-gyp: false      # Replaces the legacy "neverBuiltDependencies" array
+  core-js: false # Strongly recommended to keep false (frequent target)
+  esbuild: true # Allowed (required for esbuild to compile its binary)
+  node-gyp: false # Replaces the legacy "neverBuiltDependencies" array
 
 # 2. AGE GATEWAYS
 # Cooldown period: Blocks newly published versions for 3 days to catch malicious updates
