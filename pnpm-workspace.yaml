@@ -1,3 +1,28 @@
+# 1. BUILD SECURITY (Modern Unified Map)
+# Restricts lifecycle scripts (pre/postinstall) to strict zero-trust.
+# Packages marked 'false' or omitted are blocked from executing code.
 allowBuilds:
-  core-js: true
-  esbuild: true
+  core-js: false       # Strongly recommended to keep false (frequent target)
+  esbuild: true        # Allowed (required for esbuild to compile its binary)
+  node-gyp: false      # Replaces the legacy "neverBuiltDependencies" array
+
+# 2. AGE GATEWAYS
+# Cooldown period: Blocks newly published versions for 3 days to catch malicious updates
+minimumReleaseAge: 4320
+
+# Forces pnpm to fail hard and immediately if a package violates the age cooldown
+minimumReleaseAgeStrict: true
+
+# 3. EXTRA PROTOCOL ISOLATION
+# Blocks transitive dependencies from pulling hidden payloads via Git or raw URLs
+blockExoticSubdeps: true
+
+# 4. TRUST & INTEGRITY
+# Prevents installation if a package version drops or downgrades its trust/provenance
+trustPolicy: "no-downgrade"
+
+# Enforces checksum verification across all environments to prevent tampering
+verifyStoreIntegrity: true
+
+# Blocks fallback to network downloads if a locked version cannot be found locally
+frozenLockfile: true
