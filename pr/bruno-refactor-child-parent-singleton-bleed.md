@@ -25,11 +25,11 @@ When a singleton registered in a parent container depends on `{ multiple: true }
 
 ### Three lifetime scopes
 
-| Scope         | Instance per | Deps resolved from | Decorators | Cache lookup | Sharing |
-| ------------- | ------------ | ------------------ | ---------- | ------------ | ------- |
-| **Transient** | Every call   | Resolving container | Owning container classes, resolver deps | None | None |
-| **Singleton** | Container    | Resolving container | Full chain classes (owner->resolver), resolver deps | Resolving container only | Never — each container gets its own |
-| **Global**    | First resolver + shared downward | Owning container | Owning container classes, owning container deps | Walk up from resolver | Downward — children reuse ancestor's cached instance |
+| Scope         | Instance per                     | Deps resolved from  | Decorators                                          | Cache lookup             | Sharing                                              |
+| ------------- | -------------------------------- | ------------------- | --------------------------------------------------- | ------------------------ | ---------------------------------------------------- |
+| **Transient** | Every call                       | Resolving container | Owning container classes, resolver deps             | None                     | None                                                 |
+| **Singleton** | Container                        | Resolving container | Full chain classes (owner->resolver), resolver deps | Resolving container only | Never — each container gets its own                  |
+| **Global**    | First resolver + shared downward | Owning container    | Owning container classes, owning container deps     | Walk up from resolver    | Downward — children reuse ancestor's cached instance |
 
 ### Usage
 
