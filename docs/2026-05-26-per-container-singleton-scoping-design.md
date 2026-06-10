@@ -337,11 +337,11 @@ container.register(SqlConnectionImpl).inGlobalScope();
 
 The three lifetime scopes form a clear hierarchy:
 
-| Scope         | Instance per | Deps resolved from | Decorators from      | Cache lookup           | Sharing                          |
-| ------------- | ------------ | ------------------ | -------------------- | ---------------------- | -------------------------------- |
-| **Transient** | Every call   | Resolving container | Owning container classes, resolver deps | None                   | None                             |
-| **Singleton** | Container    | Resolving container | Full chain classes (owner→resolver), resolver deps | Resolving container only | Never — each container gets its own |
-| **Global**    | First resolver + shared downward | Owning container | Owning container classes, owning container deps | Walk up from resolver  | Downward — children reuse ancestor's cached instance |
+| Scope         | Instance per                     | Deps resolved from  | Decorators from                                    | Cache lookup             | Sharing                                              |
+| ------------- | -------------------------------- | ------------------- | -------------------------------------------------- | ------------------------ | ---------------------------------------------------- |
+| **Transient** | Every call                       | Resolving container | Owning container classes, resolver deps            | None                     | None                                                 |
+| **Singleton** | Container                        | Resolving container | Full chain classes (owner→resolver), resolver deps | Resolving container only | Never — each container gets its own                  |
+| **Global**    | First resolver + shared downward | Owning container    | Owning container classes, owning container deps    | Walk up from resolver    | Downward — children reuse ancestor's cached instance |
 
 ### Code Changes
 
@@ -373,7 +373,7 @@ Use `this` instead of `resolveFrom` for dependency resolution. Child registratio
 
 #### Decorators — owning container only
 
-Apply only `this.applyDecorators(abstraction, instance, resolutionStack, this)` — passing `this` as both the receiver and `resolveFrom`. This ensures decorator *classes* come from the owning container and decorator *constructor dependencies* are also resolved from the owning container. No child decorator chain walk. Child-registered decorators are invisible to global singletons.
+Apply only `this.applyDecorators(abstraction, instance, resolutionStack, this)` — passing `this` as both the receiver and `resolveFrom`. This ensures decorator _classes_ come from the owning container and decorator _constructor dependencies_ are also resolved from the owning container. No child decorator chain walk. Child-registered decorators are invisible to global singletons.
 
 #### Cache write — resolving container
 
