@@ -3,3 +3,5 @@ dist
 coverage/**
 .idea
 /.claude/settings.local.json
+.codegraph
+.mcp.json
