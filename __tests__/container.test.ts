@@ -741,4 +741,50 @@ describe("DIContainer", () => {
     expect(logger2.length).toBe(1);
     expect(logger1[0]).not.toBe(logger2[0]);
   });
+
+  describe("decorators registered in root container with abstraction resolved from child", () => {
+    test("should apply root decorator when abstraction is registered and resolved in child", () => {
+      const TestLogger = new Abstraction<ILogger>("TestLogger");
+
+      class BasicLogger implements ILogger {
+        log(...args: unknown[]): void {
+          console.log("BasicLogger:", ...args);
+        }
+      }
+
+      class TestLoggerDecorator implements ILogger {
+        constructor(private decoratee: ILogger) {}
+
+        log(...args: unknown[]): void {
+          console.log("Decorated:");
+          this.decoratee.log(...args);
+        }
+      }
+
+      const loggerDecorator = createDecorator({
+        abstraction: TestLogger,
+        decorator: TestLoggerDecorator,
+        dependencies: []
+      });
+
+      const basicLoggerImpl = createImplementation({
+        abstraction: TestLogger,
+        implementation: BasicLogger,
+        dependencies: []
+      });
+
+      // Register decorator in the ROOT container.
+      rootContainer.registerDecorator(loggerDecorator);
+
+      // Register the implementation in the CHILD container.
+      const child = rootContainer.createChildContainer();
+      child.register(basicLoggerImpl);
+
+      // Resolve from the child.
+      const logger = child.resolve(TestLogger);
+
+      // Should the root decorator be applied?
+      expect(logger).toBeInstanceOf(TestLoggerDecorator);
+    });
+  });
 });

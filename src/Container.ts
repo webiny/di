@@ -309,13 +309,19 @@ export class Container {
     return results;
   }
 
+  private collectDecorators<T>(token: symbol): DecoratorRegistration<T>[] {
+    const parentDecorators = this.parent ? this.parent.collectDecorators<T>(token) : [];
+    const own = (this.decorators.get(token) || []) as DecoratorRegistration<T>[];
+    return [...parentDecorators, ...own];
+  }
+
   private applyDecorators<T>(
     abstraction: Abstraction<T>,
     instance: T,
     resolutionStack: Map<symbol, boolean>,
     resolveFrom: Container
   ): T {
-    const decorators = this.decorators.get(abstraction.token) || [];
+    const decorators = this.collectDecorators<T>(abstraction.token);
     let result = instance;
 
     for (const decorator of decorators) {
