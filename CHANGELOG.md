@@ -1,5 +1,11 @@
 # @webiny/di
 
+## 1.0.2
+
+### Patch Changes
+
+- 72e2081: ensure decorators are resolved from all ancestor containers
+
 ## 1.0.1
 
 ### Patch Changes
