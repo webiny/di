@@ -8,6 +8,8 @@ import {
   CachePluginImpl,
   LoggingPlugin,
   LoggingPluginImpl,
+  MetricsPlugin,
+  MetricsPluginImpl,
   PluginRegistryImpl
 } from "./implementations.js";
 
@@ -74,5 +76,20 @@ describe("Plugin Registry - Singleton Scope", () => {
     const results = registry.executeAll();
 
     expect(results).toEqual(["auth:executed", "cache:executed", "logging:executed"]);
+  });
+
+  test("child-only plugin registration must not pollute the parent singleton registry", () => {
+    const child = container.createChildContainer();
+    child.register(MetricsPluginImpl);
+
+    const registryFromChild = child.resolve(PluginRegistryAbstraction);
+    const childPlugins = registryFromChild.getAll();
+    expect(childPlugins).toHaveLength(4);
+    expect(childPlugins.some(p => p instanceof MetricsPlugin)).toBe(true);
+
+    const registryFromParent = container.resolve(PluginRegistryAbstraction);
+    const parentPlugins = registryFromParent.getAll();
+    expect(parentPlugins).toHaveLength(3);
+    expect(parentPlugins.some(p => p instanceof MetricsPlugin)).toBe(false);
   });
 });
