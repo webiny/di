@@ -10,6 +10,7 @@ import {
   LoggingPluginImpl,
   MetricsPlugin,
   MetricsPluginImpl,
+  ValidationPluginImpl,
   PluginRegistryImpl
 } from "./implementations.js";
 
@@ -91,5 +92,21 @@ describe("Plugin Registry - Singleton Scope", () => {
     const parentPlugins = registryFromParent.getAll();
     expect(parentPlugins).toHaveLength(3);
     expect(parentPlugins.some(p => p instanceof MetricsPlugin)).toBe(false);
+  });
+
+  test("parent registration after child resolution must not bleed into child's cached singleton", () => {
+    const child = container.createChildContainer();
+    child.register(MetricsPluginImpl);
+
+    const registryFromChild = child.resolve(PluginRegistryAbstraction);
+    expect(registryFromChild.getAll()).toHaveLength(4);
+
+    const registryFromParent = container.resolve(PluginRegistryAbstraction);
+    expect(registryFromParent.getAll()).toHaveLength(3);
+
+    container.register(ValidationPluginImpl);
+
+    const registryFromChildAgain = child.resolve(PluginRegistryAbstraction);
+    expect(registryFromChildAgain.getAll()).toHaveLength(4);
   });
 });
