@@ -26,15 +26,23 @@
 
 ---
 
-### Task 1: Write failing bleed-through test
+### Task 1: Write failing bleed-through test ✅
+
+**Status:** Complete. Tests added to existing `__tests__/registry/registry.test.ts` using the PluginRegistry pattern (reuses existing infrastructure instead of creating a separate ProductRegistry file).
 
 **Files:**
 
-- Create: `__tests__/singletonBleed.test.ts`
+- Modified: `__tests__/registry/implementations.ts` — added `MetricsPlugin`/`MetricsPluginImpl` and `ValidationPlugin`/`ValidationPluginImpl`
+- Modified: `__tests__/registry/registry.test.ts` — added two failing regression tests
 
-This is the core test that proves the bug exists today and will pass after the fix.
+**Tests added:**
 
-- [ ] **Step 1: Create the test file with the ProductRegistry bleed-through scenario**
+1. `"child-only plugin registration must not pollute the parent singleton registry"` — child adds `MetricsPlugin`, resolves parent's singleton `PluginRegistry`. Child sees 4 plugins, parent must see 3. **Fails today**: parent sees 4.
+2. `"parent registration after child resolution must not bleed into child's cached singleton"` — after child caches singleton with 4 plugins and parent caches with 3, a new `ValidationPlugin` is registered in parent. Child's cached singleton must remain at 4. **Fails today**: parent's resolution returns 4 instead of 3 (bleed from the first resolution).
+
+**Original plan** (preserved below for reference — the ProductRegistry pattern in `singletonBleed.test.ts` is now superseded by the PluginRegistry tests above, but the remaining tests in this plan that go beyond bleed regression should still be created):
+
+- [x] **Step 1: Create the test file with the ProductRegistry bleed-through scenario**
 
 ```typescript
 import { describe, test, expect } from "vitest";
@@ -360,18 +368,16 @@ describe("Singleton bleed-through prevention", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm test`
+Verified: both tests fail. Test 1 fails at `expect(parentPlugins).toHaveLength(3)` — got 4. Test 2 fails at same assertion (cascading from bleed).
 
-Expected: Multiple failures. The core test "child registrations do not bleed into parent singleton" will fail because `parentRegistry.getAll()` returns 3 products (including `car`) instead of 2. The "simple singleton" test will fail because `parentInstance` is currently `toBe(childInstance)`.
+- [x] **Step 3: Commit the failing tests**
 
-- [ ] **Step 3: Commit the failing tests**
+Committed in two commits:
 
-```bash
-git add __tests__/singletonBleed.test.ts
-git commit -m "test: add failing tests for singleton bleed-through bug"
-```
+- `e541a8b` — `test: add failing test proving singleton bleed from child to parent`
+- `fb8ec03` — `test: add failing test for bidirectional singleton bleed isolation`
 
 ---
 

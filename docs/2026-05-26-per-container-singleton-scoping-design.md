@@ -193,14 +193,20 @@ These tests use **transient** registrations (no `.inSingletonScope()`), so they 
 
 ## New Tests
 
-### Singleton bleed-through tests (ProductRegistry pattern)
+### Regression tests (PluginRegistry pattern — implemented)
 
-1. **No upward bleed**: Parent singleton is not polluted when child resolves first with additional `{ multiple: true }` registrations. Assert both: parent's resolved list contains only parent products, and child's cache entry is a different object from parent's cache entry
-2. **Child inherits + extends**: Child's singleton includes parent registrations + own registrations
-3. **Sibling isolation**: Sibling children each get their own singleton instance with their own registrations
-4. **Deep hierarchy**: Grandchild sees parent + child + own registrations in its singleton
-5. **Same-container identity**: Resolving a singleton twice from the same container returns the same instance
-6. **Simple singletons**: Singletons without `{ multiple: true }` deps produce per-container instances with equivalent behavior
+These tests live in `__tests__/registry/registry.test.ts` and use the existing plugin registry infrastructure (`MetricsPlugin`, `ValidationPlugin`). They are committed as **failing tests** that prove the bug exists before the fix.
+
+1. **No upward bleed** _(implemented, failing)_: Child registers `MetricsPlugin`, resolves the parent's singleton `PluginRegistry` — child sees 4 plugins, parent must still see only 3. Currently fails: parent sees 4 (child's `MetricsPlugin` bled into parent's cache).
+2. **Singleton cache stability** _(implemented, failing)_: After child resolves with 4 plugins and parent resolves with 3, a new `ValidationPlugin` is registered in the parent. Child's cached singleton must still have 4 plugins (not 5). Currently fails: parent's resolution returns 4 instead of 3 (bleed from step 1), which cascades.
+
+### Singleton bleed-through tests (ProductRegistry pattern — planned)
+
+3. **Child inherits + extends**: Child's singleton includes parent registrations + own registrations
+4. **Sibling isolation**: Sibling children each get their own singleton instance with their own registrations
+5. **Deep hierarchy**: Grandchild sees parent + child + own registrations in its singleton
+6. **Same-container identity**: Resolving a singleton twice from the same container returns the same instance
+7. **Simple singletons**: Singletons without `{ multiple: true }` deps produce per-container instances with equivalent behavior
 
 ### Singleton variants of child container cross-resolution tests
 
