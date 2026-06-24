@@ -106,6 +106,7 @@ GitHub Actions on every push: `pnpm install --frozen-lockfile && pnpm lint && pn
 - `__tests__/container.test.ts` - Core registration, resolution, decorators, composites, factories, error cases, type shorthand tests.
 - `__tests__/singletons.test.ts` - Singleton lifetime across parent/child hierarchy.
 - `__tests__/childContainer/` - Cross-container resolution bug tests with multi-level dependency override scenarios.
+- `__tests__/registry/` - Plugin registry singleton scope tests using a realistic multi-plugin registry pattern. Includes singleton bleed-through regression tests proving child registrations must not pollute parent singletons and that cached singletons remain stable after later registrations.
 - `__tests__/types.test-d.ts` - Compile-time type assertion tests.
 - `__tests__/setupEnv.ts` - Imports `reflect-metadata` globally for tests.
 
@@ -123,3 +124,4 @@ GitHub Actions on every push: `pnpm install --frozen-lockfile && pnpm lint && pn
 
 - `DependencyGraph.ts` is WIP and uses `@ts-nocheck`. It references a `graphlib` dependency that isn't installed. Excluded from coverage.
 - The child container test file (`__tests__/childContainer/childContainer.test.ts`) includes tests for a cross-resolution bug where child overrides must propagate through parent-registered services. This is a critical correctness property of the container.
+- **Singleton bleed-through bug** (`bruno/refactor/child-parent-singleton-bleed`): When a child container resolves a parent-registered singleton with `{ multiple: true }` deps, child registrations pollute the parent's cached singleton. Two failing regression tests in `__tests__/registry/registry.test.ts` prove the bug. Fix is designed but not yet implemented — see `docs/2026-05-26-per-container-singleton-scoping-design.md`.

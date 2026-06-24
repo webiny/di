@@ -72,6 +72,15 @@ grandchild.resolve(SqlConnection) -> walks up, finds in child1 -> child1's insta
 
 ### Tests
 
+#### Committed (failing — prove the bug before the fix)
+
+- **`__tests__/registry/registry.test.ts`** — two regression tests using the existing PluginRegistry infrastructure:
+  1. `"child-only plugin registration must not pollute the parent singleton registry"` — child adds `MetricsPlugin`, resolves parent's singleton registry. Child sees 4 plugins, parent must see 3. **Fails today**: parent sees 4.
+  2. `"parent registration after child resolution must not bleed into child's cached singleton"` — after child caches with 4 and parent caches with 3, a new `ValidationPlugin` registered in parent must not change child's cached singleton (stays at 4). **Fails today**: parent returns 4 instead of 3.
+- **`__tests__/registry/implementations.ts`** — added `MetricsPlugin`/`MetricsPluginImpl` and `ValidationPlugin`/`ValidationPluginImpl`
+
+#### Planned (will pass after the fix)
+
 - **Update existing** — `singletons.test.ts`, `registry.test.ts`: cross-container `toBe` identity assertions updated to assert behavioral equivalence within the same container
 - **New: `singletonBleed.test.ts`** — bleed-through prevention, child inheritance, sibling isolation, deep hierarchy, same-container identity
 - **New: `singletonCrossResolution.test.ts`** — singleton variants of all `childContainer.test.ts` scenarios (override some/all/no deps, grandchild chain, great-grandchild 4-level hierarchy)
@@ -97,8 +106,15 @@ This is a **breaking semantic change**. The singleton contract changes from "one
 - `docs/superpowers/plans/2026-05-26-per-container-singleton-scoping.md` — task-by-task implementation plan
 - `docs/2026-05-26-container-hardening-design.md` — cold review findings (falsy cache bug, circular dep check bypass, perf issues)
 
+## Current status
+
+- Design spec and implementation plan: committed
+- Failing regression tests: committed (2 tests in `registry.test.ts` prove the bug)
+- Implementation: not started
+
 ## Test plan
 
+- [x] Failing regression tests committed proving singleton bleed-through bug
 - [ ] All existing tests pass (with updated identity assertions)
 - [ ] New bleed-through tests pass — child registrations never appear in parent singleton
 - [ ] Sibling isolation — two children with different registrations get independent singletons
