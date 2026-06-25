@@ -78,6 +78,12 @@ grandchild.resolve(SqlConnection) -> walks up, finds in child1 -> child1's insta
   1. `"child-only plugin registration must not pollute the parent singleton registry"` — child adds `MetricsPlugin`, resolves parent's singleton registry. Child sees 4 plugins, parent must see 3. **Fails today**: parent sees 4.
   2. `"parent registration after child resolution must not bleed into child's cached singleton"` — after child caches with 4 and parent caches with 3, a new `ValidationPlugin` registered in parent must not change child's cached singleton (stays at 4). **Fails today**: parent returns 4 instead of 3.
 - **`__tests__/registry/implementations.ts`** — added `MetricsPlugin`/`MetricsPluginImpl` and `ValidationPlugin`/`ValidationPluginImpl`
+- **`__tests__/containerToken.test.ts`** — ContainerToken self-registration tests:
+  1. `"child container resolves parent container instead of itself"` — documents the inheritance limitation where child gets the parent's container instance
+  2. `"grandchild container also resolves the root container"` — same limitation through deeper hierarchy
+  3. `"child self-registration does not bleed into parent"` — **passes**: proves `registerInstance` in a child is isolated
+  4. `"sibling self-registrations do not bleed into each other or parent"` — **passes**: sibling isolation for instance registrations
+  5. `"grandchild self-registration does not bleed into child or parent"` — **passes**: full hierarchy isolation for instance registrations
 
 #### Planned (will pass after the fix)
 
@@ -110,11 +116,13 @@ This is a **breaking semantic change**. The singleton contract changes from "one
 
 - Design spec and implementation plan: committed
 - Failing regression tests: committed (2 tests in `registry.test.ts` prove the bug)
+- ContainerToken bleed tests: committed (5 tests in `containerToken.test.ts` — 2 document the inheritance limitation, 3 prove instance registration isolation)
 - Implementation: not started
 
 ## Test plan
 
 - [x] Failing regression tests committed proving singleton bleed-through bug
+- [x] ContainerToken self-registration bleed tests — proves `registerInstance` isolation across hierarchy
 - [ ] All existing tests pass (with updated identity assertions)
 - [ ] New bleed-through tests pass — child registrations never appear in parent singleton
 - [ ] Sibling isolation — two children with different registrations get independent singletons
