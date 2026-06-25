@@ -526,3 +526,12 @@ Reuse the parent's cached instance when the child has no additional registration
 In `resolveRegistration`, use `this` instead of `resolveFrom` only for `{ multiple: true }` dependencies.
 
 **Rejected because:** Prevents bleed but the child doesn't get its own aggregated view — CarProduct wouldn't appear in the child's ProductRegistry. Does not meet the requirement that child sees parent + own registrations.
+
+## Related: ContainerToken Self-Registration
+
+A separate but related issue exists with the `ContainerToken` pattern, where a parent container self-registers via `registerInstance(ContainerToken, container)`. Child containers inherit that registration and resolve the **parent** container instead of themselves. This is distinct from the singleton bleed bug:
+
+- **Not a bleed bug**: `registerInstance` in a child is fully isolated — it writes to the child's own `instanceRegistrations` map and never pollutes the parent. Tests in `__tests__/containerToken.test.ts` prove this across child, sibling, and grandchild scenarios.
+- **An inheritance limitation**: `createChildContainer()` does not auto-register the child under `ContainerToken`, so the parent's instance is inherited by default. The fix is for consumers to explicitly register the child container after creation, or for `createChildContainer` to accept a post-creation hook.
+
+This issue is unaffected by the per-container singleton scoping change, since `registerInstance` bypasses the singleton cache entirely.
