@@ -60,6 +60,34 @@ export const LoggingPluginImpl = createImplementation({
   dependencies: []
 });
 
+export class MetricsPlugin implements IPlugin {
+  name = "metrics";
+
+  execute(): string {
+    return "metrics:executed";
+  }
+}
+
+export const MetricsPluginImpl = createImplementation({
+  abstraction: PluginAbstraction,
+  implementation: MetricsPlugin,
+  dependencies: []
+});
+
+export class ValidationPlugin implements IPlugin {
+  name = "validation";
+
+  execute(): string {
+    return "validation:executed";
+  }
+}
+
+export const ValidationPluginImpl = createImplementation({
+  abstraction: PluginAbstraction,
+  implementation: ValidationPlugin,
+  dependencies: []
+});
+
 export const PluginRegistryImpl = createImplementation({
   abstraction: PluginRegistryAbstraction,
   implementation: PluginRegistry,
