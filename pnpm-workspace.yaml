@@ -15,3 +15,12 @@ minimumReleaseAge: 4320
 # Strictly fail the installation if a package is too new
 # If false, pnpm tries to gracefully roll back to the last safe, older version instead
 minimumReleaseAgeStrict: true
+
+# Security
+ignoreScripts: true
+
+# Fail on peer dependency mismatches
+strictPeerDependencies: true
+
+# Fail on invalid SSL/TLS certificates
+strictSsl: true
