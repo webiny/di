@@ -41,8 +41,18 @@ export class Container {
    * class. Resolution is otherwise identical to `resolve()`: dependencies come from this container,
    * and decorators registered for the abstraction are applied.
    *
-   * Nothing is registered and nothing is cached — the instance is transient even if an equivalent
-   * registration is a singleton, because there is no registration to key a singleton on.
+   * IMPORTANT — this does NOT consult registrations, so it does not share a registered singleton:
+   *
+   * ```ts
+   * container.register(Impl).inSingletonScope();
+   *
+   * container.resolve(Thing);              // the singleton, same instance every time
+   * container.resolveImplementation(Impl); // a FRESH instance, not the singleton
+   * ```
+   *
+   * That follows from what the method is for — you are asking for this class, not for whatever is
+   * registered under its abstraction — but it means the two are not interchangeable. Reach for
+   * `resolve()` whenever the abstraction can identify what you want; use this only when it cannot.
    */
   resolveImplementation<T>(implementation: Constructor<T>): T {
     const { abstraction, registration } = this.describeImplementation(implementation);

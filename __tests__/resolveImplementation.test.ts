@@ -173,6 +173,23 @@ describe("resolveImplementation", () => {
     expect(child.resolveImplementation(PrefixedGreeterImpl).greet()).toBe("child hello");
   });
 
+  /**
+   * The one behaviour that makes `resolve()` and `resolveImplementation()` non-interchangeable, and
+   * the reason they are separate methods rather than one overload: this does not consult
+   * registrations, so a registered singleton is not shared.
+   */
+  test("does not share a registered singleton", () => {
+    const container = new Container();
+    container.register(HelloImpl).inSingletonScope();
+
+    const viaAbstraction = container.resolve(Greeter);
+    expect(container.resolve(Greeter)).toBe(viaAbstraction);
+
+    const viaImplementation = container.resolveImplementation(HelloImpl);
+    expect(viaImplementation).not.toBe(viaAbstraction);
+    expect(container.resolveImplementation(HelloImpl)).not.toBe(viaImplementation);
+  });
+
   test("returns a new instance each call, since there is no registration to cache on", () => {
     const container = new Container();
 
