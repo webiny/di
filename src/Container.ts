@@ -22,8 +22,56 @@ export class Container {
   private parent?: Container;
 
   register<T>(implementation: Constructor<T>): RegistrationBuilder<T> {
+    const { abstraction, registration } = this.describeImplementation(implementation);
+
+    const existing = this.registrations.get(abstraction.token) || [];
+    this.registrations.set(abstraction.token, [...existing, registration]);
+
+    return new RegistrationBuilder(registration);
+  }
+
+  /**
+   * Resolve ONE implementation, without registering it.
+   *
+   * Use it when the caller already holds the class it wants and the abstraction cannot identify it
+   * — several implementations registered under the same abstraction, where `resolve()` cannot say
+   * which and `resolveAll()` would construct all of them.
+   *
+   * The implementation's dependencies come from its own metadata, so the caller passes only the
+   * class. Resolution is otherwise identical to `resolve()`: dependencies come from this container,
+   * and decorators registered for the abstraction are applied.
+   *
+   * IMPORTANT — this does NOT consult registrations, so it does not share a registered singleton:
+   *
+   * ```ts
+   * container.register(Impl).inSingletonScope();
+   *
+   * container.resolve(Thing);              // the singleton, same instance every time
+   * container.resolveImplementation(Impl); // a FRESH instance, not the singleton
+   * ```
+   *
+   * That follows from what the method is for — you are asking for this class, not for whatever is
+   * registered under its abstraction — but it means the two are not interchangeable. Reach for
+   * `resolve()` whenever the abstraction can identify what you want; use this only when it cannot.
+   */
+  resolveImplementation<T>(implementation: Constructor<T>): T {
+    const { abstraction, registration } = this.describeImplementation(implementation);
+
+    return this.resolveRegistration(abstraction, registration, new Map(), this);
+  }
+
+  /**
+   * Reads an implementation's metadata into the registration shape used for resolution, with the
+   * checks `register()` and `resolveImplementation()` both need.
+   */
+  private describeImplementation<T>(implementation: Constructor<T>): {
+    abstraction: Abstraction<T>;
+    registration: Registration<T>;
+  } {
     const metadata = new Metadata(implementation);
-    const abstraction = metadata.getAbstraction();
+    // Metadata is untyped storage, but an implementation is only ever paired with the abstraction
+    // whose interface it implements — `createImplementation` enforces that at the call site.
+    const abstraction = metadata.getAbstraction() as Abstraction<T> | undefined;
     const dependencies = metadata.getDependencies();
 
     if (isComposite(implementation)) {
@@ -38,16 +86,14 @@ export class Container {
       throw new Error(`No abstraction metadata found for ${implementation.name}`);
     }
 
-    const registration: Registration<T> = {
-      implementation,
-      dependencies: dependencies || [],
-      scope: LifetimeScope.Transient
+    return {
+      abstraction,
+      registration: {
+        implementation,
+        dependencies: dependencies || [],
+        scope: LifetimeScope.Transient
+      }
     };
-
-    const existing = this.registrations.get(abstraction.token) || [];
-    this.registrations.set(abstraction.token, [...existing, registration]);
-
-    return new RegistrationBuilder(registration);
   }
 
   registerInstance<T>(abstraction: Abstraction<T>, instance: T): void {
