@@ -85,6 +85,10 @@ pnpm test:coverage     # V8 coverage for src/
 
 Run a single test file: `pnpm vitest run __tests__/container.test.ts`
 
+## Agent Skills
+
+- `.claude/skills/handoff/SKILL.md` - End-of-session handoff: refresh `AGENTS.md`, design specs, plan checklists and `pr/<branch>.md`, run the CI checks, commit, write `docs/handoff/<date>-<slug>.md`, and print a prompt for the next session. Trigger with "handoff" or "wrap up".
+
 ## Checks to Run Before Committing
 
 Run all three in order. All must pass — this matches CI.
