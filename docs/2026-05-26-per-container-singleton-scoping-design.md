@@ -1,445 +1,198 @@
 # Per-Container Singleton Scoping
 
+Revision 2 (2026-09-11). Supersedes the original spec. The first revision was written against an
+older `Container.ts` and drifted after `feat: add Container.resolveImplementation (#17)` and
+`fix: decorators resolution`. Section "Review findings" lists every issue found in the first
+revision and the decision taken for each. The rest of the document is the resulting design.
+
 ## Problem
 
-When a singleton registered in a parent container has a `{ multiple: true }` dependency, child container registrations bleed into the parent's cached singleton instance.
+When a singleton registered in a parent container has a `{ multiple: true }` dependency, child
+container registrations bleed into the parent's cached singleton instance.
 
-### Root Cause
+### Root cause
 
-In `Container.ts`, `resolveRegistration` caches singletons in `this.instances` — the container that **owns** the registration. But dependencies are resolved via `resolveFrom` — the container that **requested** the resolution.
+In `resolveRegistration` (`src/Container.ts`), singletons are cached in `this.instances`, the
+container that **owns** the registration. Dependencies are resolved via `resolveFrom`, the
+container that **requested** the resolution. The cache key is the `Registration` object, so one
+cache slot is shared by every container in the hierarchy.
 
 When a child first resolves a parent's singleton:
 
-1. Child calls `resolve(ProductRegistry)` — walks up to parent
-2. Parent's `resolveRegistration` resolves dependencies using `resolveFrom = child`
-3. `resolveMultiple` for `[Product, { multiple: true }]` collects from parent (CoffeeProduct, ComputerProduct) **and** child (CarProduct)
-4. The instance (containing all three products) is cached in `this.instances` — the **parent**
-5. Parent later resolves `ProductRegistry` — gets the cached instance containing CarProduct
+1. Child calls `resolve(ProductRegistry)`, walks up to the parent.
+2. Parent's `resolveRegistration` resolves dependencies with `resolveFrom = child`.
+3. `resolveMultiple` for `[Product, { multiple: true }]` collects from parent (Coffee, Computer)
+   **and** child (Car).
+4. The instance holding all three products is cached in the **parent's** `instances` map.
+5. Parent later resolves `ProductRegistry` and gets the child's Car.
 
-The child's CarProduct has bled into the parent's singleton.
+The same mechanism also leaks plain overrides. If a child overrides `Logger` and is the first to
+resolve a parent singleton that depends on `Logger`, every later resolver, including the parent,
+gets the child's logger. `__tests__/childContainer/CHILD_CONTAINER_BUG.md` documented this as a
+known follow-up when `resolveFrom` was introduced.
 
-### Example
+### Regression tests (committed, failing)
 
-```
-Parent registers: ProductRegistry (singleton), CoffeeProduct, ComputerProduct
-Child registers:  CarProduct
+`__tests__/registry/registry.test.ts`:
 
-child.resolve(ProductRegistry)   // resolveFrom=child, collects 3 products, caches in parent
-parent.resolve(ProductRegistry)  // returns cached instance with 3 products — WRONG
-```
+1. `child-only plugin registration must not pollute the parent singleton registry`
+2. `parent registration after child resolution must not bleed into child's cached singleton`
 
-## Solution
+Both fail today at `expect(parentPlugins).toHaveLength(3)` with 4.
 
-Cache singletons per-resolving-container instead of per-owning-container.
+## Review findings
 
-### Code Changes
+Issues found when re-reading the first revision against the current `Container.ts` (base
+`09d73c0`). Each carries the decision that the design below implements.
 
-All changes are in `resolveRegistration` (`src/Container.ts`). TypeScript `private` allows same-class instance access — `this` can read/write `resolveFrom.instances` and call `resolveFrom.applyDecorators` since both are `Container`.
+### F1. The decorator chain walk double-applies parent decorators
 
-#### Change 1: Singleton cache lookup and write
+The first revision walked from `resolveFrom` up to `this` and called `container.applyDecorators`
+for each intermediate container. Since `fix: decorators resolution`, `applyDecorators` calls
+`collectDecorators`, which already walks **up** the ancestor chain of whatever container it is
+called on. Calling it per intermediate container applies the parent's decorators once per level:
+twice for a child, three times for a grandchild.
 
-- **Cache lookup**: `resolveFrom.instances.get(registration)` instead of `this.instances.get(registration)`
-- **Cache write**: `resolveFrom.instances.set(registration, decoratedInstance)` instead of `this.instances.set(registration, decoratedInstance)`
+**Decision:** drop the manual walk. Call `resolveFrom.applyDecorators(...)` once.
+`resolveFrom.collectDecorators(token)` already returns the whole chain from root to `resolveFrom`
+in parent-to-child order, including containers **above** the owner. This is one changed receiver,
+not a new loop.
 
-#### Change 2: Apply child decorator chain
+### F2. The spec contradicted itself on transient scope
 
-After the owning container applies its decorators (`this.applyDecorators`), walk from `resolveFrom` up to `this` collecting intermediate containers, then apply each container's decorators in parent-to-child order. This ensures child-registered decorators are applied to parent-owned singletons.
+The scope table said transient decorators come from the owning container only, while the
+proposed code applied the child chain to every scope. One of them had to give.
 
-### Before
+**Decision:** decorators follow the requesting container for every non-global path. Everything
+else in resolution is already viewed from `resolveFrom` (dependency overrides, `{ multiple: true }`
+collection), so decorators registered in a child applying to services the child resolves is the
+consistent rule. This is a behavior change for transient, instance and factory registrations
+resolved through a child that has registered a decorator. No existing test covers that case.
+
+The minimal-change alternative, keeping `this.applyDecorators` for transient/instance/factory and
+changing only the singleton path, is rejected because it makes "which decorators apply" depend on
+lifetime scope, which nobody will predict correctly.
+
+### F3. Global scope was not global
+
+The first revision cached global instances in the requesting container with a walk-up lookup.
+Because global dependencies and decorators are resolved from the owner only, the constructed
+instance is identical regardless of who resolves it. The walk-up therefore bought nothing and
+introduced an ordering dependence ("Case B": a child resolving before its parent produced a second
+instance that siblings never saw).
+
+**Decision:** cache global instances in the **owning** container's `instances` map, exactly where
+singletons are cached today. One registration, one instance, no matter who resolves first. This
+also makes migration clean: code that relied on the old cross-container identity switches to
+`inGlobalScope()` and gets identical identity semantics, minus the bleed.
+
+### F4. Falsy singleton values are never cached
+
+`if (existing)` at the cache check would re-construct any singleton that resolved to `0`, `false`,
+`""` or `null`. Carried over from `docs/2026-05-26-container-hardening-design.md`.
+
+In practice this cannot be hit: the only value that enters the cache is the result of `new`, which
+is always an object. The check is still wrong on its face and costs nothing to fix.
+
+**Decision:** `if (existing !== undefined)`. `resolveInternal` already treats `undefined` as "not
+found" and falls through to the parent, so `undefined` is the only value that cannot be cached
+either way. No test, since no registration path can produce a falsy instance.
+
+### F5. Stale references
+
+- The implementation plan cites line numbers and commit hashes (`e541a8b`, `fb8ec03`) from before
+  a rebase. Actual commits are `a96c546` and `baf1179`.
+- `Container.resolveImplementation` did not exist when the first revision was written. It calls
+  `resolveRegistration` with a fresh transient registration and `this` as `resolveFrom`, so it is
+  unaffected, but the plan's "modify lines 222-261" no longer points at the right code.
+
+**Decision:** regenerate `docs/superpowers/plans/2026-05-26-per-container-singleton-scoping.md`
+from this revision before implementation starts.
+
+## Design
+
+### Three lifetime scopes
+
+| Scope         | Instance per         | Deps resolved from   | Decorators (classes and their deps) | Cache location |
+| ------------- | -------------------- | -------------------- | ----------------------------------- | -------------- |
+| **Transient** | Every call           | Requesting container | Requesting container's chain        | None           |
+| **Singleton** | Requesting container | Requesting container | Requesting container's chain        | Requesting     |
+| **Global**    | Registration         | Owning container     | Owning container's chain            | Owning         |
+
+"Chain" means the container plus all of its ancestors, applied root-first. For the requesting
+container that is root → … → owner → … → requester. For the owning container it is root → … →
+owner.
 
 ```typescript
-private resolveRegistration<T>(
-  abstraction: Abstraction<T>,
-  registration: Registration<T>,
-  resolutionStack: Map<symbol, boolean>,
-  resolveFrom: Container
-): T {
-  if (registration.scope === LifetimeScope.Singleton) {
-    const existing = this.instances.get(registration);  // <-- owning container
-    if (existing) {
-      return existing;
-    }
-  }
-
-  // ... resolve deps using resolveFrom ...
-
-  const decoratedInstance = this.applyDecorators(  // <-- only owning container's decorators
-    abstraction, instance, resolutionStack, resolveFrom
-  );
-
-  if (registration.scope === LifetimeScope.Singleton) {
-    this.instances.set(registration, decoratedInstance);  // <-- owning container
-  }
-
-  // ...
-}
+container.register(ProductRegistryImpl).inSingletonScope(); // one per resolving container
+container.register(SqlConnectionImpl).inGlobalScope(); // one, shared by the whole hierarchy
 ```
 
-### After
+### Singleton scope
 
-```typescript
-private resolveRegistration<T>(
-  abstraction: Abstraction<T>,
-  registration: Registration<T>,
-  resolutionStack: Map<symbol, boolean>,
-  resolveFrom: Container
-): T {
-  if (registration.scope === LifetimeScope.Singleton) {
-    const existing = resolveFrom.instances.get(registration);  // <-- requesting container
-    if (existing) {
-      return existing;
-    }
-  }
+Each container that resolves the singleton gets its own instance, built from its own view of the
+hierarchy and cached in its own `instances` map. Inheritance flows downward (child sees parent
+registrations plus its own) and never upward.
 
-  // resolutionStack.set/delete and dep resolution unchanged — see Before
+```
+Parent: ProductRegistry (singleton), CoffeeProduct, ComputerProduct
+Child:  CarProduct
 
-  // Apply owning container's decorators first
-  let decoratedInstance = this.applyDecorators(
-    abstraction, instance, resolutionStack, resolveFrom
-  );
-
-  // Apply child decorator chain (parent-to-child order).
-  // Invariant: resolveFrom is always a descendant of this (or this itself).
-  // This is guaranteed by resolveInternal's walk-up — the only path to
-  // resolveRegistration is via the ancestor chain from resolveFrom.
-  if (resolveFrom !== this) {
-    const chain: Container[] = [];
-    let current: Container | undefined = resolveFrom;
-    while (current && current !== this) {
-      chain.push(current);
-      current = current.parent;
-    }
-    chain.reverse();
-    for (const container of chain) {
-      decoratedInstance = container.applyDecorators(
-        abstraction, decoratedInstance, resolutionStack, resolveFrom
-      );
-    }
-  }
-
-  if (registration.scope === LifetimeScope.Singleton) {
-    resolveFrom.instances.set(registration, decoratedInstance);  // <-- requesting container
-  }
-
-  // ...
-}
+parent.resolve(ProductRegistry)  -> [Coffee, Computer]       cached in parent
+child.resolve(ProductRegistry)   -> [Coffee, Computer, Car]  cached in child
+parent.resolve(ProductRegistry)  -> [Coffee, Computer]       from parent cache, unpolluted
 ```
 
-### Decorator chain ordering
+Consequences worth stating plainly:
 
-Decorators are applied in layers from the owning container outward to the requesting container:
+- `child.resolve(X) !== parent.resolve(X)` for singletons. Same-container identity still holds.
+- A singleton without any overridable dependency still gets one instance per container. This is
+  redundant construction, not incorrect behavior. Use global scope when sharing is the point.
+- Singleton A depending on singleton B: a child resolving A constructs and caches its own B, even
+  if the parent already cached a B. Per-container means per-container all the way down.
+
+### Global scope
+
+One instance per registration, constructed entirely from the owning container's point of view and
+cached in the owning container. Children resolve the same object. Child registrations, overrides
+and decorators have no effect on it.
+
+```
+Parent: SqlConnection (global), LoggingDecorator for SqlConnection
+Child:  MetricsDecorator for SqlConnection, FileLogger overriding Logger
+
+child.resolve(SqlConnection)  -> LoggingDecorator(SqlConnection(parent's Logger))  cached in parent
+parent.resolve(SqlConnection) -> same object
+```
+
+If child-specific behavior is needed on top of a global, wrap it behind a separate abstraction
+that depends on the global one.
+
+### Decorators
+
+`applyDecorators` is called on the container whose chain should apply, and the same container is
+passed as `resolveFrom` so decorator constructor dependencies come from the same place:
+
+- Non-global paths: `resolveFrom.applyDecorators(abstraction, instance, stack, resolveFrom)`
+- Global path: `this.applyDecorators(abstraction, instance, stack, this)`
+
+Order is root-first, so inner decorators are the ones registered closest to the root:
 
 ```
 Parent: ServiceA (singleton), DecoratorX for ServiceA
 Child:  DecoratorY for ServiceA
 
 child.resolve(ServiceA)  -> DecoratorY(DecoratorX(ServiceA))
-parent.resolve(ServiceA) -> DecoratorX(ServiceA)  // child's DecoratorY not applied
+parent.resolve(ServiceA) -> DecoratorX(ServiceA)
 ```
 
-Inner decorators (closer to the registration owner) wrap first. Outer decorators (closer to the requester) wrap last.
+## Code changes
 
-Decorator constructor dependencies at every level of the chain are resolved from `resolveFrom` (the outermost requesting container), not from the intermediate container that registered the decorator. This means child overrides propagate into intermediate decorator deps as well as the outermost decorator.
+All in `src/Container.ts` and `src/types.ts`. `private` members of another `Container` instance are
+accessible from within the class, so `resolveFrom.instances` and `resolveFrom.applyDecorators`
+compile as-is.
 
-## New Singleton Semantics
-
-| Aspect           | Before                               | After                                               |
-| ---------------- | ------------------------------------ | --------------------------------------------------- |
-| Cache location   | Owning container                     | Requesting container                                |
-| Instance sharing | One instance shared across hierarchy | One instance per container that resolves it         |
-| Child view       | Shared with parent (may be polluted) | Own instance with parent deps + own deps            |
-| Parent isolation | Not guaranteed                       | Guaranteed — parent cache is never written by child |
-
-### Behavior
-
-```
-Parent: ProductRegistry (singleton), CoffeeProduct, ComputerProduct
-Child:  CarProduct
-
-parent.resolve(ProductRegistry)  -> [CoffeeProduct, ComputerProduct]       (cached in parent)
-child.resolve(ProductRegistry)   -> [CoffeeProduct, ComputerProduct, Car]  (cached in child)
-parent.resolve(ProductRegistry)  -> [CoffeeProduct, ComputerProduct]       (from parent cache, unpolluted)
-```
-
-Inheritance flows downward (parent -> child) but never upward. Each container gets its own singleton instance reflecting its own dependency graph.
-
-## Impact on Existing Tests
-
-### `__tests__/singletons.test.ts`
-
-Tests that assert reference identity across containers will break:
-
-- "should share singleton instance across all child containers" — `instanceFromRoot === instanceFromChild` is no longer true
-- "should create singleton only once even with multiple resolves" — cross-container identity no longer holds
-- "should share singleton through nested child containers" — same
-- "should share child-level singleton with its own nested children" — grandchild will get a per-container instance different from child's
-- "should inject same singleton instance into multiple consumers" — cross-container `toBe` identity on injected deps will fail
-- "should handle singleton with decorators applied at parent level" — `i1 === i2 === i3` across root and children will fail
-
-These tests need updating to assert **behavioral equivalence** (same dependencies resolved to same values) rather than **reference identity** (`toBe`). Within the **same** container, `toBe` identity still holds — resolving twice from the same container returns the cached instance.
-
-### `__tests__/registry/registry.test.ts`
-
-This test file has cross-container singleton assertions that will also break:
-
-- "child container resolves the same singleton registry as the parent" — `toBe` identity across parent/child no longer holds
-- "plugins inside registry are same singleton instances as individually resolved" — if plugins are singletons and resolved from different containers, they get per-container instances
-
-Same treatment as `singletons.test.ts` — update to assert behavioral equivalence within the same container.
-
-### `__tests__/childContainer/childContainer.test.ts`
-
-These tests use **transient** registrations (no `.inSingletonScope()`), so they are unaffected by this change. However, singleton variants of every scenario must be added to guarantee the same cross-resolution behavior holds under singleton scoping. The existing transient tests remain as-is.
-
-## New Tests
-
-### Regression tests (PluginRegistry pattern — implemented)
-
-These tests live in `__tests__/registry/registry.test.ts` and use the existing plugin registry infrastructure (`MetricsPlugin`, `ValidationPlugin`). They are committed as **failing tests** that prove the bug exists before the fix.
-
-1. **No upward bleed** _(implemented, failing)_: Child registers `MetricsPlugin`, resolves the parent's singleton `PluginRegistry` — child sees 4 plugins, parent must still see only 3. Currently fails: parent sees 4 (child's `MetricsPlugin` bled into parent's cache).
-2. **Singleton cache stability** _(implemented, failing)_: After child resolves with 4 plugins and parent resolves with 3, a new `ValidationPlugin` is registered in the parent. Child's cached singleton must still have 4 plugins (not 5). Currently fails: parent's resolution returns 4 instead of 3 (bleed from step 1), which cascades.
-
-### Singleton bleed-through tests (ProductRegistry pattern — planned)
-
-3. **Child inherits + extends**: Child's singleton includes parent registrations + own registrations
-4. **Sibling isolation**: Sibling children each get their own singleton instance with their own registrations
-5. **Deep hierarchy**: Grandchild sees parent + child + own registrations in its singleton
-6. **Same-container identity**: Resolving a singleton twice from the same container returns the same instance
-7. **Simple singletons**: Singletons without `{ multiple: true }` deps produce per-container instances with equivalent behavior
-
-### Singleton variants of child container cross-resolution tests
-
-Mirror the existing `childContainer.test.ts` scenarios but with `.inSingletonScope()` on the `NotificationService` registration. These verify that the `resolveFrom` passthrough still correctly resolves overridden dependencies when singletons are involved:
-
-7. **Parent resolves all null implementations (singleton)**: Parent singleton NotificationService resolves all parent deps
-8. **Child overrides some deps (singleton)**: Child resolves parent's singleton NotificationService — overridden deps (Logger, EmailClient) come from child, rest from parent. Parent's singleton is unaffected.
-9. **Child overrides all deps (singleton)**: Same as above but all deps overridden in child
-10. **Child overrides no deps (singleton)**: Child resolves parent's singleton with no overrides — gets equivalent instance with all parent deps
-11. **Grandchild inherits overrides through the chain (singleton)**: Grandchild resolves singleton with overrides spread across child and grandchild levels
-12. **Child override does not affect parent resolution (singleton)**: After child resolves singleton with overrides, parent resolves its own singleton — must see only parent deps
-13. **Great-grandchild resolves overrides spread across 4 levels (singleton)**: Singleton resolved from a great-grandchild picks up overrides from every level in the hierarchy
-
-### Decorator chain tests
-
-14. **Child decorator applied to parent singleton**: Child registers a decorator for a parent-owned singleton — child's singleton gets both parent and child decorators
-15. **Grandchild decorator chain**: Parent, child, and grandchild each register decorators — grandchild's singleton gets all three layers in parent-to-child order
-16. **Parent singleton unaffected by child decorators**: After child resolves with its decorator, parent resolves its own singleton — only parent decorators applied
-17. **Intermediate decorator deps resolved from requesting container**: Child registers a decorator with its own dependency. Grandchild overrides that dependency. Grandchild resolves the singleton — the child's decorator receives the grandchild's override for its constructor dependency, not the child's own registration
-
-### Resolution ordering tests
-
-18. **Both siblings resolve before parent**: child1 resolves (caches in child1), child2 resolves (caches in child2), then parent resolves — parent must see only parent registrations, not child1 or child2
-19. **Parent resolves before child**: Parent caches its singleton, then child resolves — child gets its own instance (not the parent's cached one), parent's cache untouched
-20. **Singleton dependency chain per-container**: Singleton B depends on singleton A — child resolves B, both A and B get per-container instances. Child's B.a is the same object as child's resolve(A).
-21. **Singleton dependency chain — parent pre-cached**: Parent resolves singleton A first (cached in parent). Then child resolves singleton B (which depends on A). Child's B resolves its own instance of A (cached in child) because the singleton cache lookup checks `resolveFrom.instances` (child), not `this.instances` (parent). Assert both: `B.a !== parent.resolve(A)` (child constructed its own A, different from parent's) and `B.a === child.resolve(A)` (child cached A during B's resolution; subsequent child.resolve(A) returns the same object). Document this as expected per-container singleton behavior.
-
-## Concrete Example: ProductRegistry with Parent, Child, and Grandchild
-
-This example illustrates the full scope of the problem and the fix using a realistic product registry scenario.
-
-### Setup
-
-```
-Abstractions:
-  - Product         (interface for a product)
-  - ProductRegistry (singleton, depends on [Product, { multiple: true }])
-
-Parent container registers:
-  - ProductRegistry  (singleton)
-  - CoffeeProduct    (implements Product)
-  - ComputerProduct  (implements Product)
-  - DecoratorA       (decorator for ProductRegistry — adds logging)
-
-Child container registers:
-  - CarProduct       (implements Product)
-  - MobilePhoneProduct (implements Product)
-  - DecoratorB       (decorator for ProductRegistry — adds caching)
-
-Grandchild container registers:
-  - LaptopProduct    (implements Product)
-  - BallProduct      (implements Product)
-```
-
-### Before the fix (current broken behavior)
-
-```
-grandchild.resolve(ProductRegistry)
-  → resolveFrom = grandchild
-  → walks to parent (owns the singleton registration)
-  → resolves [Product, { multiple: true }] from grandchild's perspective
-  → collects: Coffee, Computer (parent) + Car, MobilePhone (child) + Laptop, Ball (grandchild)
-  → applies ONLY parent's DecoratorA (child's DecoratorB and grandchild decorators are ignored)
-  → caches in parent.instances ← BUG: 6 products cached in parent
-
-parent.resolve(ProductRegistry)
-  → finds cached instance in parent.instances
-  → returns registry with 6 products ← WRONG: Car, MobilePhone, Laptop, Ball leaked from children
-
-child.resolve(ProductRegistry)
-  → finds cached instance in parent.instances (same polluted one)
-  → returns registry with 6 products ← WRONG: Laptop, Ball leaked from grandchild
-```
-
-Every container sees the same polluted singleton. The first resolver's context "wins" and contaminates the cache for everyone.
-
-### After the fix (per-container singleton scoping + decorator chain)
-
-```
-parent.resolve(ProductRegistry)
-  → resolveFrom = parent (same as this)
-  → resolves [Product, { multiple: true }] from parent's perspective
-  → collects: Coffee, Computer
-  → applies DecoratorA
-  → caches in parent.instances
-  → result: DecoratorA(ProductRegistry([Coffee, Computer]))
-
-child.resolve(ProductRegistry)
-  → resolveFrom = child
-  → walks to parent (owns the singleton registration)
-  → checks child.instances → miss
-  → resolves [Product, { multiple: true }] from child's perspective
-  → collects: Coffee, Computer (parent) + Car, MobilePhone (child)
-  → applies DecoratorA (parent), then DecoratorB (child)
-  → caches in child.instances
-  → result: DecoratorB(DecoratorA(ProductRegistry([Coffee, Computer, Car, MobilePhone])))
-
-grandchild.resolve(ProductRegistry)
-  → resolveFrom = grandchild
-  → walks to parent (owns the singleton registration)
-  → checks grandchild.instances → miss
-  → resolves [Product, { multiple: true }] from grandchild's perspective
-  → collects: Coffee, Computer (parent) + Car, MobilePhone (child) + Laptop, Ball (grandchild)
-  → applies DecoratorA (parent), then DecoratorB (child), then grandchild's decorators (none)
-  → caches in grandchild.instances
-  → result: DecoratorB(DecoratorA(ProductRegistry([Coffee, Computer, Car, MobilePhone, Laptop, Ball])))
-
-parent.resolve(ProductRegistry)
-  → finds cached instance in parent.instances
-  → returns: DecoratorA(ProductRegistry([Coffee, Computer])) ← CORRECT, unpolluted
-
-child.resolve(ProductRegistry)
-  → finds cached instance in child.instances
-  → returns: DecoratorB(DecoratorA(ProductRegistry([Coffee, Computer, Car, MobilePhone]))) ← CORRECT
-```
-
-Each container sees exactly the registrations from its own level and above — never from below. Decorators accumulate in parent-to-child order. Repeated resolution from the same container returns the cached singleton instance.
-
-## Global Scope
-
-### Problem
-
-Per-container singleton scoping solves the bleed bug, but creates a gap for shared resources. A SQL connection, HTTP client, or logger should be constructed from a stable context (the owning container) and shared downward to children — not rebuilt per container with potentially different deps. Developers need a way to opt into "owner-context resolution, shared downward on cache hit" semantics where child registrations and decorators have zero influence.
-
-Note: Global scope does **not** guarantee a single instance across the entire hierarchy. If a child resolves before its parent, both construct independently (from the same owning-container context, producing behaviorally equivalent instances). The guarantee is: once an instance is cached in a container, all descendants reuse it via walk-up lookup. To ensure a true single instance, resolve from the root container first.
-
-### Solution
-
-Add `LifetimeScope.Global` to the enum and `.inGlobalScope()` to `RegistrationBuilder`.
-
-```typescript
-container.register(SqlConnectionImpl).inGlobalScope();
-```
-
-The three lifetime scopes form a clear hierarchy:
-
-| Scope         | Instance per                     | Deps resolved from  | Decorators from                                    | Cache lookup             | Sharing                                              |
-| ------------- | -------------------------------- | ------------------- | -------------------------------------------------- | ------------------------ | ---------------------------------------------------- |
-| **Transient** | Every call                       | Resolving container | Owning container classes, resolver deps            | None                     | None                                                 |
-| **Singleton** | Container                        | Resolving container | Full chain classes (owner→resolver), resolver deps | Resolving container only | Never — each container gets its own                  |
-| **Global**    | First resolver + shared downward | Owning container    | Owning container classes, owning container deps    | Walk up from resolver    | Downward — children reuse ancestor's cached instance |
-
-### Code Changes
-
-Changes are in `src/Container.ts` (`resolveRegistration` third branch, `RegistrationBuilder.inGlobalScope()`) and `src/types.ts` (`LifetimeScope.Global` enum value).
-
-#### Cache lookup — walk up ancestors
-
-Instead of checking only `resolveFrom.instances` (singleton behavior), walk from `resolveFrom` up through its parent chain. If any ancestor has a cached instance for this registration, return it immediately.
-
-```typescript
-if (registration.scope === LifetimeScope.Global) {
-  let current: Container | undefined = resolveFrom;
-  while (current) {
-    const existing = current.instances.get(registration);
-    if (existing !== undefined) {
-      return existing;
-    }
-    if (current === this) break; // don't walk above the owning container
-    current = current.parent;
-  }
-}
-```
-
-The walk stops at `this` (the owning container). No container above the owner ever caches entries for this registration, so walking further is logically incoherent.
-
-#### Dep resolution — owning container only
-
-Use `this` instead of `resolveFrom` for dependency resolution. Child registrations have zero influence on the global singleton's dependencies.
-
-#### Decorators — owning container only
-
-Apply only `this.applyDecorators(abstraction, instance, resolutionStack, this)` — passing `this` as both the receiver and `resolveFrom`. This ensures decorator _classes_ come from the owning container and decorator _constructor dependencies_ are also resolved from the owning container. No child decorator chain walk. Child-registered decorators are invisible to global singletons.
-
-#### Cache write — resolving container
-
-Store the constructed instance in `resolveFrom.instances` (same as singleton scope). This means the container that triggered construction owns the cache entry, and its children find it via the walk-up.
-
-### Behavior
-
-#### Case A: Parent resolves first
-
-```
-Parent: SqlConnection (global scope)
-Child1, Child2 = parent.createChildContainer()
-
-parent.resolve(SqlConnection)  → no cache anywhere, constructs from parent context, caches in parent
-child1.resolve(SqlConnection)  → walks up, finds in parent → same instance ✓
-child2.resolve(SqlConnection)  → walks up, finds in parent → same instance ✓
-
-parent.resolve(SqlConnection) === child1.resolve(SqlConnection)  // true
-parent.resolve(SqlConnection) === child2.resolve(SqlConnection)  // true
-```
-
-#### Case B: Child resolves first
-
-```
-Parent: SqlConnection (global scope)
-Child1, Child2 = parent.createChildContainer()
-Grandchild = child1.createChildContainer()
-
-child1.resolve(SqlConnection)  → walks up to parent, no cache, constructs from parent context, caches in child1
-parent.resolve(SqlConnection)  → no cache in parent, constructs from parent context, caches in parent
-child2.resolve(SqlConnection)  → walks up, finds in parent → parent's instance
-
-grandchild.resolve(SqlConnection) → walks up, finds in child1 → child1's instance
-
-child1.resolve(SqlConnection) === parent.resolve(SqlConnection)   // false (different instances)
-child2.resolve(SqlConnection) === parent.resolve(SqlConnection)   // true  (child2 found parent's cache)
-grandchild.resolve(SqlConnection) === child1.resolve(SqlConnection) // true (grandchild found child1's cache)
-```
-
-All instances are behaviorally equivalent (same deps, same decorators from owning container), but they are distinct objects when constructed independently.
-
-#### Case C: Child decorators and registrations have no effect
-
-```
-Parent: SqlConnection (global scope), LoggingDecorator for SqlConnection
-Child:  MetricsDecorator for SqlConnection, ExtraService
-
-child.resolve(SqlConnection)
-  → walks up, no cache
-  → constructs from parent context (MetricsDecorator is invisible)
-  → applies only parent's LoggingDecorator (child's MetricsDecorator is ignored)
-  → caches in child
-  → result: LoggingDecorator(SqlConnection)
-```
-
-If child-specific behavior is needed, the developer creates a separate abstraction and implementation that wraps or depends on the global singleton.
-
-### API Changes
-
-#### `LifetimeScope` enum (in `src/types.ts`, after change)
+### `src/types.ts`
 
 ```typescript
 export enum LifetimeScope {
@@ -449,89 +202,249 @@ export enum LifetimeScope {
 }
 ```
 
-#### `RegistrationBuilder` (in `src/Container.ts`, after change)
+### `RegistrationBuilder`
 
 ```typescript
 class RegistrationBuilder<T> {
   constructor(private registration: Registration<T>) {}
 
-  inSingletonScope(): void {
+  inSingletonScope(): this {
     this.registration.scope = LifetimeScope.Singleton;
+    return this;
   }
 
-  inGlobalScope(): void {
+  inGlobalScope(): this {
     this.registration.scope = LifetimeScope.Global;
+    return this;
   }
 }
 ```
 
-No changes to `Registration` interface — it already has `scope: LifetimeScope`. `RegistrationBuilder` is an internal (unexported) class — consumers use it inline: `container.register(X).inGlobalScope()`.
+Returning `this` instead of `void` is a hardening item; it costs nothing and keeps the builder
+chainable.
 
-### New Tests
+### `resolveRegistration`
 
-#### Global scope isolation tests
-
-1. **Parent resolves first — children share instance**: Parent resolves global singleton, both children get the same instance via `toBe` identity
-2. **Child resolves first — parent gets its own**: Child1 resolves before parent, parent resolves its own, child2 gets parent's, grandchild of child1 gets child1's
-3. **Child decorators ignored**: Child registers a decorator for a global singleton — child's resolution does not include that decorator
-4. **Child `{ multiple: true }` registrations ignored**: Global singleton depends on `[Product, { multiple: true }]` — child's Product registrations are invisible to it. Assert exact list contents (not just length): resolved products match only the parent's registered product names, and child's product name is absent
-5. **Same-container identity**: Resolving a global singleton twice from the same container returns the same instance
-6. **Walk-up returns nearest ancestor's cache**: Child1 resolves before parent. Grandchild (child of child1) resolves — gets child1's instance (nearest ancestor hit), not parent's. Verifies the walk-up stops at the first cache hit, not at the owning container
-7. **Deep hierarchy sharing**: Root resolves global singleton, grandchild and great-grandchild all get the same instance via walk-up
-
-### Approach Alternatives Considered
-
-#### B: Separate registration method (`registerGlobal`)
+Before (current main):
 
 ```typescript
-container.registerGlobal(SqlConnectionImpl);
+private resolveRegistration<T>(
+  abstraction: Abstraction<T>,
+  registration: Registration<T>,
+  resolutionStack: Map<symbol, boolean>,
+  resolveFrom: Container
+): T {
+  if (registration.scope === LifetimeScope.Singleton) {
+    const existing = this.instances.get(registration);
+    if (existing) {
+      return existing;
+    }
+  }
+
+  resolutionStack.set(abstraction.token, true);
+
+  const resolvedDeps = registration.dependencies.map(dep => {
+    const [abstractionDep, depOptions] = Array.isArray(dep) ? dep : [dep, {}];
+    return resolveFrom.resolveInternal(abstractionDep, new Map(resolutionStack), depOptions, resolveFrom);
+  });
+
+  const instance = new registration.implementation(...resolvedDeps);
+  const decoratedInstance = this.applyDecorators(abstraction, instance, resolutionStack, resolveFrom);
+
+  if (registration.scope === LifetimeScope.Singleton) {
+    this.instances.set(registration, decoratedInstance);
+  }
+
+  resolutionStack.delete(abstraction.token);
+  return decoratedInstance;
+}
 ```
 
-**Rejected because:** Duplicates registration logic. Inconsistent with how singleton scope works (builder pattern). Every new scope means a new method.
+After:
 
-#### C: Scope as a strategy object
+```typescript
+private resolveRegistration<T>(
+  abstraction: Abstraction<T>,
+  registration: Registration<T>,
+  resolutionStack: Map<symbol, boolean>,
+  resolveFrom: Container
+): T {
+  // Global instances live with the registration owner and are built from the owner's view.
+  // Singletons live with the requester and are built from the requester's view.
+  const isGlobal = registration.scope === LifetimeScope.Global;
+  const context = isGlobal ? this : resolveFrom;
 
-Replace the enum with a scope strategy object that controls cache lookup, dep resolution, and decorator application.
+  if (registration.scope !== LifetimeScope.Transient) {
+    const existing = context.instances.get(registration);
+    if (existing !== undefined) {
+      return existing;
+    }
+  }
 
-**Rejected because:** Over-engineered for three scopes. Breaks the existing API. Adds abstraction nobody asked for.
+  resolutionStack.set(abstraction.token, true);
 
-## Breaking Change
+  const resolvedDeps = registration.dependencies.map(dep => {
+    const [abstractionDep, depOptions] = Array.isArray(dep) ? dep : [dep, {}];
+    return context.resolveInternal(abstractionDep, new Map(resolutionStack), depOptions, context);
+  });
 
-This is a **breaking semantic change** to `@webiny/di`. The singleton contract changes from "one shared instance across the hierarchy" to "one instance per container that resolves it."
+  const instance = new registration.implementation(...resolvedDeps);
+  const decoratedInstance = context.applyDecorators(abstraction, instance, resolutionStack, context);
 
-Impact:
+  if (registration.scope !== LifetimeScope.Transient) {
+    context.instances.set(registration, decoratedInstance);
+  }
 
-- Code that relies on `child.resolve(X) === parent.resolve(X)` (reference identity across containers) will break
-- Singletons without `{ multiple: true }` deps will now create per-container instances instead of sharing — this is redundant but not incorrect
-- The change must be released as a **semver major or minor with explicit changelog entry**, not a patch
+  resolutionStack.delete(abstraction.token);
+  return decoratedInstance;
+}
+```
 
-## Documentation Updates
+The whole change collapses to "pick the context container once, then use it for cache, deps and
+decorators". For transient and singleton the context is `resolveFrom`; for global it is `this`.
 
-`AGENTS.md` Lifetime Scopes section needs updating:
+### Other `applyDecorators` call sites (F2)
 
-- **Before**: "Singleton - One instance per container where registered. Cached after first resolution (including decorators). Shared with all child containers that don't shadow the registration."
-- **After**: "Singleton - One instance per container that resolves it. Cached after first resolution (including decorators). Each container in the hierarchy gets its own instance reflecting its own dependency graph. Inheritance flows downward — child sees parent registrations plus its own — but never upward."
-- **New**: "Global - One instance shared downward through the hierarchy. Cached on first resolution. Dependencies and decorators resolved exclusively from the owning container — child registrations and decorators have no effect. Children reuse an ancestor's cached instance if one exists (walk-up lookup)."
+`tryResolveFromCurrentContainer` (instance registrations, factories) and `resolveMultiple`
+(instance registrations, factories) call `this.applyDecorators(..., resolveFrom)`. Change the
+receiver to `resolveFrom` so the requesting container's decorator chain applies on every
+non-global path. Class registrations in `resolveMultiple` go through `resolveRegistration` and
+need no separate change.
 
-## Approach Alternatives Considered
+### Unchanged
 
-### B: Smart caching (only when deps differ)
+- `resolveInternal` walk-up, circular-dependency check, `{ optional: true }` handling.
+- `resolveImplementation`: still transient, still `this` as `resolveFrom`.
+- Composites: still transient, still not cacheable. `registerComposite` returning `void` is a
+  known asymmetry, out of scope here.
+- `registerInstance` and `registerFactory`: never touch the singleton cache.
 
-Reuse the parent's cached instance when the child has no additional registrations affecting the singleton's dependencies. Only create a per-container instance when the resolution context actually differs.
+## Impact on existing tests
 
-**Rejected because:** Complex to implement correctly — requires tracking which abstractions each singleton depends on and comparing registrations across containers. Risk of subtle bugs if the "same deps" detection is wrong.
+These assert cross-container reference identity for singletons and will fail after the change.
+Each is rewritten to assert same-container identity plus cross-container **non**-identity, or
+moved to `inGlobalScope()` where shared identity is what the test is about.
 
-### C: Fix only `{ multiple: true }` resolution
+`__tests__/singletons.test.ts`:
 
-In `resolveRegistration`, use `this` instead of `resolveFrom` only for `{ multiple: true }` dependencies.
+- `should share singleton instance across all child containers`
+- `should create singleton only once even with multiple resolves`
+- `should share singleton through nested child containers`
+- `should share child-level singleton with its own nested children`
+- `should inject same singleton instance into multiple consumers`
+- `should handle singleton with decorators applied at parent level`
 
-**Rejected because:** Prevents bleed but the child doesn't get its own aggregated view — CarProduct wouldn't appear in the child's ProductRegistry. Does not meet the requirement that child sees parent + own registrations.
+`__tests__/registry/registry.test.ts`:
 
-## Related: ContainerToken Self-Registration
+- `child container resolves the same singleton registry as the parent`
 
-A separate but related issue exists with the `ContainerToken` pattern, where a parent container self-registers via `registerInstance(ContainerToken, container)`. Child containers inherit that registration and resolve the **parent** container instead of themselves. This is distinct from the singleton bleed bug:
+`__tests__/childContainer/childContainer.test.ts` uses transient registrations and is unaffected.
+`__tests__/singletonCacheKeyCollision/*` resolve from a single container and are unaffected.
 
-- **Not a bleed bug**: `registerInstance` in a child is fully isolated — it writes to the child's own `instanceRegistrations` map and never pollutes the parent. Tests in `__tests__/containerToken.test.ts` prove this across child, sibling, and grandchild scenarios.
-- **An inheritance limitation**: `createChildContainer()` does not auto-register the child under `ContainerToken`, so the parent's instance is inherited by default. The fix is for consumers to explicitly register the child container after creation, or for `createChildContainer` to accept a post-creation hook.
+## New tests
 
-This issue is unaffected by the per-container singleton scoping change, since `registerInstance` bypasses the singleton cache entirely.
+### Singleton bleed (`__tests__/singletonBleed.test.ts`)
+
+1. Child inherits parent registrations plus its own.
+2. Sibling children get isolated instances with their own registrations.
+3. Grandchild sees parent + child + own; parent and child untouched.
+4. Same-container identity: resolving twice returns the same object.
+5. Both siblings resolve before parent; parent is unpolluted.
+6. Parent resolves before child; child still gets its own instance and the parent cache is intact.
+7. Singleton dependency chain: child's `B.a === child.resolve(A)` and `!== parent.resolve(A)`,
+   including when the parent cached `A` first.
+8. Simple singleton without overridable deps still yields per-container instances.
+
+### Singleton cross-resolution (`__tests__/childContainer/singletonCrossResolution.test.ts`)
+
+Singleton variants of every `childContainer.test.ts` scenario: override none, some, all;
+grandchild and great-grandchild chains; parent unaffected after child resolution.
+
+### Decorator chain (`__tests__/singletonDecoratorChain.test.ts`)
+
+1. Child decorator applied on top of parent decorator for a parent-owned singleton; parent gets only
+   its own.
+2. Grandchild gets three layers, root-first; each ancestor decorator applied **exactly once** (F1).
+3. Intermediate decorator's constructor dependency is resolved from the requesting container, so a
+   grandchild override reaches a child-registered decorator.
+4. Child decorator also applies to a parent-owned **transient**, instance registration and factory
+   resolved from the child (F2).
+
+### Global scope (`__tests__/globalScope.test.ts`)
+
+1. Parent resolves first; both children get the same object.
+2. Child resolves first; parent and sibling get the same object as the child (F3: order does not
+   matter).
+3. Child decorator ignored.
+4. Child `{ multiple: true }` registrations ignored; assert exact product names, not just length.
+5. Child override of a dependency ignored; the global uses the owner's registration.
+6. Same-container identity.
+7. Deep hierarchy: great-grandchild resolves the root's instance.
+8. Global registered in a child is shared by that child's descendants and invisible to the parent.
+
+## Breaking change
+
+The singleton contract changes from "one shared instance across the hierarchy" to "one instance
+per container that resolves it". Release as a **major** with a changeset.
+
+Migration:
+
+- `child.resolve(X) === parent.resolve(X)` for singletons no longer holds.
+- Code that wants the old sharing switches the registration to `.inGlobalScope()`. Identity
+  semantics are then identical to today's singleton, without the bleed.
+- Decorators registered in a child now apply to parent-owned services resolved from that child,
+  regardless of scope (F2).
+
+## Documentation updates
+
+`AGENTS.md`, Lifetime Scopes:
+
+- **Transient** (default): new instance on every `resolve()` call.
+- **Singleton**: one instance per container that resolves it, cached after first resolution with
+  decorators applied. Each container gets an instance reflecting its own dependency graph.
+  Inheritance flows downward, never upward.
+- **Global**: one instance per registration, cached in the owning container and shared by every
+  descendant. Dependencies and decorators are resolved from the owning container only; child
+  registrations and decorators have no effect.
+
+`AGENTS.md`, Child Container Semantics: add that decorators are collected from the requesting
+container's chain, root-first, for all non-global resolutions.
+
+Remove the "Singleton bleed-through bug" entry from Known Issues once the fix lands.
+
+## Alternatives considered
+
+- **Smart caching (reuse parent instance when the child adds nothing relevant).** Requires
+  tracking each singleton's transitive dependency set and diffing registrations per container.
+  Easy to get subtly wrong. Rejected.
+- **Fix only `{ multiple: true }` resolution by using `this` for it.** Stops the bleed but the child
+  no longer sees its own registrations in the aggregate. Rejected.
+- **Walk-up cache for global scope.** See F3. Rejected in favor of owner-cached.
+- **Separate `registerGlobal()` method.** Duplicates registration logic; every new scope would need
+  a new method. Rejected in favor of the builder.
+- **Scope strategy objects.** Over-engineered for three scopes. Rejected.
+
+## Related: ContainerToken self-registration
+
+A parent that registers itself via `registerInstance(ContainerToken, container)` is inherited by
+children, which then resolve the **parent** container instead of themselves. This is an inheritance
+limitation, not a bleed: `registerInstance` in a child writes only to the child's map.
+`__tests__/containerToken.test.ts` pins both facts. The tests that assert the limitation
+(`expect(resolved).toBe(parent)`) will need flipping if `createChildContainer` ever self-registers
+the child. Unaffected by this change.
+
+## Branch hygiene
+
+Not part of the design, but found on the branch and worth resolving before the PR is opened.
+
+- **Engines vs CI.** `chore: update dependencies` sets `engines.node` to `>=24.0.0`; both workflows
+  in `.github/workflows` still run Node 22.x. Align one with the other.
+- **Unrelated bumps.** vitest 5, vite 8, rslib 1.0 and the workspace hardening ride on this
+  feature branch. Fine if intended; otherwise split them out.
+- **Stale cache-key-collision material.** `bugs/` and `docs/SINGLETON_CACHE_KEY_COLLISION_TESTS.md`
+  describe a bug fixed in #12. Two of its ten planned test files exist. Two of the unwritten ones
+  (`withChildContainer`, `withDeepHierarchy`) assert cross-container singleton identity and must
+  use `inGlobalScope()` if they are ever written.
+- **Hardening doc status.** Prettier scripts are already gone. `import "reflect-metadata"` in
+  `src/types.ts` and the unwired `__tests__/setupEnv.ts` are still open.
+- **Changeset.** None present. Add one (major) before opening the PR.
