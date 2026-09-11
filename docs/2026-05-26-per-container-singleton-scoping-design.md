@@ -338,10 +338,19 @@ moved to `inGlobalScope()` where shared identity is what the test is about.
 
 - `child container resolves the same singleton registry as the parent`
 
+`__tests__/container.test.ts`:
+
+- `should resolve instance from parent container if not found in child container` (registers a
+  singleton in the root and asserts `toBe` identity from the child)
+
 `__tests__/childContainer/childContainer.test.ts` uses transient registrations and is unaffected.
 `__tests__/singletonCacheKeyCollision/*` resolve from a single container and are unaffected.
 
 ## New tests
+
+The first three files below are committed (`test: pin per-container singleton and decorator chain
+semantics`) and fail until the fix lands. The global scope file is deferred until
+`inGlobalScope()` exists, since the suite runs with typecheck.
 
 ### Singleton bleed (`__tests__/singletonBleed.test.ts`)
 
@@ -370,7 +379,7 @@ grandchild and great-grandchild chains; parent unaffected after child resolution
 4. Child decorator also applies to a parent-owned **transient**, instance registration and factory
    resolved from the child (F2).
 
-### Global scope (`__tests__/globalScope.test.ts`)
+### Global scope (`__tests__/globalScope.test.ts`, deferred)
 
 1. Parent resolves first; both children get the same object.
 2. Child resolves first; parent and sibling get the same object as the child (F3: order does not
@@ -381,6 +390,32 @@ grandchild and great-grandchild chains; parent unaffected after child resolution
 6. Same-container identity.
 7. Deep hierarchy: great-grandchild resolves the root's instance.
 8. Global registered in a child is shared by that child's descendants and invisible to the parent.
+
+## Open items from cold review (2026-09-11)
+
+Two independent reviews of this revision confirmed the "After" code produces the behavior claimed
+in every traced case. These are gaps in what the spec states, left for the owner to decide or
+confirm before implementation.
+
+1. **Global depending on Singleton.** The singleton dependency is resolved as if the owner
+   requested it and is cached in the owner. So `parent.resolve(G).s === parent.resolve(S)` but
+   `child.resolve(G).s !== child.resolve(S)`. State it, and add a test.
+2. **Global shadowing.** Parent and child both registering the same abstraction as global yields
+   two instances; nearest registration wins for that container and its descendants; `resolveAll`
+   returns both. State it.
+3. **Lifecycle cost.** Per-request child containers rebuild every parent singleton per request
+   unless migrated to global. Belongs under "Breaking change". Upside: today's code retains
+   child-built instances in the parent forever; the fix removes that retention.
+4. **Composites.** Never decorated, never cached. Add a table row so the F2 rule is not read as
+   covering them.
+5. **Cache slots are write-once.** Later registrations or decorators never invalidate a cached
+   instance. `registry.test.ts` pins this for registrations; nothing pins it for decorators.
+6. **`resolveWithDependencies`** uses `this` throughout, never caches, never decorates. Add to
+   "Unchanged".
+7. **Test hygiene** in the committed files: one decorator-chain test passes today by accident and
+   needs an assertion on the child's result; duplicated `ServiceA`/`ServiceB` fixtures should be
+   hoisted; unread `id` fields should go; "child overrides all deps" leaves `TemplateEngine`
+   unoverridden.
 
 ## Breaking change
 
