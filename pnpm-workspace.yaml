@@ -1,53 +1,78 @@
-# 1. BUILD SECURITY (Modern Unified Map)
-# Restricts lifecycle scripts (pre/postinstall) to strict zero-trust.
-# Packages marked 'false' or omitted are blocked from executing code.
-# Strict build settings
+# 1. BUILD SECURITY
+# Restricts lifecycle scripts (pre/post/install) to strict zero-trust.
+# Blocks every dependency lifecycle script, including any not listed below.
+ignoreScripts: true
+
+# Fail the install outright if any dependency build was skipped,
+# instead of silently warning and carrying on.
 strictDepBuilds: true
 
-# Control script permissions explicitly
+# Control script permissions explicitly. Packages marked 'false' — or simply
+# omitted — are blocked from executing code. None of these are currently in the
+# dependency tree; they are pinned to 'false' so they cannot silently gain
+# build rights if they ever appear as a transitive dependency.
 allowBuilds:
-  core-js: false # Strongly recommended to keep false (frequent target)
-  esbuild: true # Allowed (required for esbuild to compile its binary)
+  core-js: false # Frequent supply-chain target
+  esbuild: false # Not installed (rslib/rspack are Rust-based); no build needed
   node-gyp: false # Replaces the legacy "neverBuiltDependencies" array
 
 # 2. AGE GATEWAYS
-# Cooldown period: Blocks newly published versions for 3 days to catch malicious updates
+# Cooldown period in minutes (1440 * 3 = 3 days). Blocks newly published
+# versions long enough for malicious releases to be caught and yanked.
 minimumReleaseAge: 4320
 
-# Forces pnpm to fail hard and immediately if a package violates the age cooldown
+# Fail hard and immediately if a package violates the age cooldown.
+# If false, pnpm silently rolls back to the last older version instead.
 minimumReleaseAgeStrict: true
 
-# 3. EXTRA PROTOCOL ISOLATION
+# Do NOT waive the cooldown for packages whose registry serves no publish date.
+# This is an opt-in escape hatch (pnpm 12); pinning it false keeps a registry
+# that cannot date its releases from bypassing both the age and trust checks.
+minimumReleaseAgeIgnoreMissingTime: false
+
+# 3. PROTOCOL ISOLATION
 # Blocks transitive dependencies from pulling hidden payloads via Git or raw URLs
 blockExoticSubdeps: true
 
 # 4. TRUST & INTEGRITY
-# Prevents installation if a package version drops or downgrades its trust/provenance
+# Refuse a package version that drops or downgrades its trust/provenance level
 trustPolicy: "no-downgrade"
 
-# Enforces checksum verification across all environments to prevent tampering
+# Re-verify checksums of packages in the store on every install
 verifyStoreIntegrity: true
 
-# Blocks fallback to network downloads if a locked version cannot be found locally
+# Fail (rather than warn) if a package read back from the store does not match
+# the name/version it was recorded under - a broken lockfile, or a registry
+# serving content that disagrees with its own metadata. Default in pnpm 12;
+# pinned so a future default change cannot silently downgrade it to a warning.
+strictStorePkgContentCheck: true
+
+# Never take the lockfile on trust: re-verify every entry against the policies
+# above on each install. Without this the minimumReleaseAge and trustPolicy
+# checks can be skipped wholesale for already-locked entries.
+trustLockfile: false
+
+# Refuse to mutate the lockfile; fail if it is out of sync with package.json.
+# Run `pnpm install --no-frozen-lockfile` when intentionally changing deps.
 frozenLockfile: true
-  esbuild: true
-  core-js: false # Explicitly deny core-js if its postinstall script is not needed
 
-# Block untrusted transitive links
-blockExoticSubdeps: true
+# Refuse to run any script until node_modules matches the lockfile, so a stale
+# or tampered-with node_modules cannot execute during build/test.
+verifyDepsBeforeRun: error
 
-# Enforce a bake period in minutes (1440 * 3 mins = 3 days)
-minimumReleaseAge: 4320
+# 5. RESOLUTION STRICTNESS
+# Never let pnpm pull a package into the tree that this project did not ask for.
+# pnpm defaults this to TRUE, which silently installs missing peer dependencies
+# as real packages. False + strictPeerDependencies below turns an unmet peer
+# into a hard error instead of a silent new dependency.
+autoInstallPeers: false
 
-# Strictly fail the installation if a package is too new
-# If false, pnpm tries to gracefully roll back to the last safe, older version instead
-minimumReleaseAgeStrict: true
-
-# Security
-ignoreScripts: true
-
-# Fail on peer dependency mismatches
+# Fail on peer dependency mismatches rather than warning
 strictPeerDependencies: true
+
+# Record exact versions (no ^ ranges) for anything added later, so a new
+# dependency cannot float to a version that was never reviewed.
+saveExact: true
 
 # Fail on invalid SSL/TLS certificates
 strictSsl: true
