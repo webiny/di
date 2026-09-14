@@ -85,6 +85,10 @@ pnpm test:coverage     # V8 coverage for src/
 
 Run a single test file: `pnpm vitest run __tests__/container.test.ts`
 
+## Agent Skills
+
+- `.claude/skills/handoff/SKILL.md` - End-of-session handoff: refresh `AGENTS.md`, design specs, plan checklists and `pr/<branch>.md`, run the CI checks, commit, write `docs/handoff/<date>-<slug>.md`, and print a prompt for the next session. Trigger with "handoff" or "wrap up".
+
 ## Checks to Run Before Committing
 
 Run all three in order. All must pass — this matches CI.
@@ -105,7 +109,11 @@ GitHub Actions on every push: `pnpm install --frozen-lockfile && pnpm lint && pn
 
 - `__tests__/container.test.ts` - Core registration, resolution, decorators, composites, factories, error cases, type shorthand tests.
 - `__tests__/singletons.test.ts` - Singleton lifetime across parent/child hierarchy.
-- `__tests__/childContainer/` - Cross-container resolution bug tests with multi-level dependency override scenarios.
+- `__tests__/childContainer/` - Cross-container resolution bug tests with multi-level dependency override scenarios. `singletonCrossResolution.test.ts` repeats them with a singleton-scoped service.
+- `__tests__/singletonBleed.test.ts` - Per-container singleton semantics: child registrations never reach the parent's instance, siblings are isolated, same-container identity holds.
+- `__tests__/singletonDecoratorChain.test.ts` - Decorators collected from the requesting container's chain, root-first, applied exactly once, for singleton and non-singleton paths.
+- `__tests__/registry/` - Plugin registry singleton scope tests using a realistic multi-plugin registry pattern. Includes singleton bleed-through regression tests proving child registrations must not pollute parent singletons and that cached singletons remain stable after later registrations.
+- `__tests__/containerToken.test.ts` - ContainerToken self-registration tests proving `registerInstance` in a child does not bleed into the parent, plus tests showing the current limitation where child containers inherit the parent's container instance.
 - `__tests__/types.test-d.ts` - Compile-time type assertion tests.
 - `__tests__/setupEnv.ts` - Imports `reflect-metadata` globally for tests.
 
@@ -123,3 +131,5 @@ GitHub Actions on every push: `pnpm install --frozen-lockfile && pnpm lint && pn
 
 - `DependencyGraph.ts` is WIP and uses `@ts-nocheck`. It references a `graphlib` dependency that isn't installed. Excluded from coverage.
 - The child container test file (`__tests__/childContainer/childContainer.test.ts`) includes tests for a cross-resolution bug where child overrides must propagate through parent-registered services. This is a critical correctness property of the container.
+- **Singleton bleed-through bug** (`bruno/refactor/child-parent-singleton-bleed`): When a child container resolves a parent-registered singleton with `{ multiple: true }` deps, child registrations pollute the parent's cached singleton. Two failing regression tests in `__tests__/registry/registry.test.ts` prove the bug. Fix is designed but not yet implemented — see `docs/2026-05-26-per-container-singleton-scoping-design.md` (revision 2) and `docs/2026-09-14-scoping-prior-art.md` (how other containers scope shared instances; open decision on whether `Singleton` keeps its shared meaning). The new test files listed above pin the target behavior and fail until the fix lands.
+- **ContainerToken inheritance limitation**: When a parent container self-registers via `registerInstance(ContainerToken, container)`, child containers inherit that registration and resolve the parent container instead of themselves. This is not a bleed bug (child `registerInstance` calls are fully isolated and never pollute the parent), but it means child containers must explicitly self-register to get the correct container reference. Tests in `__tests__/containerToken.test.ts` document both the limitation and the isolation guarantee.

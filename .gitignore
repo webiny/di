@@ -5,3 +5,4 @@ coverage/**
 /.claude/settings.local.json
 .codegraph
 .mcp.json
+.DS_Store
