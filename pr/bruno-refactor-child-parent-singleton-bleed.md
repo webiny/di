@@ -1,55 +1,24 @@
-## Summary
+## Issue
 
-Singletons registered in a parent container are polluted by child containers. The fix is designed and pinned by failing tests; the implementation in `src/Container.ts` is not started.
+A singleton registered in a parent container is cached in the parent but built from the view of whichever container resolves it first. If a child resolves it first, the child's registrations (`{ multiple: true }` entries, overridden dependencies) end up in the parent's cached instance and every other container gets them.
 
-Design: `docs/2026-05-26-per-container-singleton-scoping-design.md` (revision 2).
-Prior art: `docs/2026-09-14-scoping-prior-art.md` (how tsyringe, Autofac, Microsoft DI, Spring and others scope shared instances).
+Root cause in `resolveRegistration`: cache in `this.instances`, dependencies from `resolveFrom`. Two related gaps: decorators registered in a child never apply to a parent-owned service the child resolves, and there is no scope for "one instance shared by the whole hierarchy" once singletons stop leaking.
 
-## Issues
+Pinned by 22 failing tests. Implementation not started.
 
-1. **Singleton bleed.** `resolveRegistration` caches in the owning container but resolves dependencies from the requesting container. The first child to resolve a parent singleton writes its own view (extra `{ multiple: true }` entries, overridden deps) into the parent's cache, and every other container gets it.
-2. **Decorators stop at the owner.** A decorator registered in a child never applies to a parent-owned service the child resolves. Decorators are collected from the owner's chain, not the requester's.
-3. **Falsy cache check.** `if (existing)` instead of `if (existing !== undefined)`. Unreachable today since `new` always yields an object, but wrong on its face.
-4. **No opt-in for shared instances.** Once singletons are per-container, a SQL pool or HTTP client needs a way to stay one instance across the hierarchy.
+## Possible solutions
 
-## Possible fixes
+Pick one context container per resolution and use it for cache, dependencies and decorators. Two ways to name the result:
 
-Pick one context container per resolution and use it for cache, deps and decorators:
+**A. Redefine `Singleton`, add `Global`** (current spec). `inSingletonScope()` becomes one instance per resolving container; `inGlobalScope()` is one instance per registration, built and cached in the owner. Isolation by default. Breaks `child.resolve(X) === parent.resolve(X)`; major release.
 
-| Scope        | Context   | Result                                                                                         |
-| ------------ | --------- | ---------------------------------------------------------------------------------------------- |
-| Transient    | requester | as today, plus requester-chain decorators                                                      |
-| Singleton    | requester | one instance per resolving container, cached in that container                                 |
-| Global (new) | owner     | one instance per registration, cached in the owner, child registrations and decorators ignored |
+**B. Keep `Singleton`, add `ContainerScoped`.** `inSingletonScope()` keeps shared identity but is built from the owner's view, which alone removes the bleed. New `inContainerScope()` gives the per-container instance. Matches tsyringe, Autofac and Microsoft DI naming. Patch for the fix, minor for the new scope.
 
-- `resolveRegistration`: `const context = scope === Global ? this : resolveFrom`, then `context.instances`, `context.resolveInternal(..., context)`, `context.applyDecorators(..., context)`.
-- `tryResolveFromCurrentContainer` and `resolveMultiple`: call `resolveFrom.applyDecorators` instead of `this.applyDecorators` for instance and factory registrations.
-- `LifetimeScope.Global` and `RegistrationBuilder.inGlobalScope()`.
+Same `resolveRegistration` change either way; only the meaning of the existing keyword differs. Decision pending.
 
-Alternatives rejected in the spec: smart caching by dependency diff, fixing only `{ multiple: true }`, walk-up cache for globals.
+## Docs
 
-## Open decisions
-
-- Child decorators applying to parent-owned transients, instances and factories is a behavior change. No existing test depends on the old behavior.
-- Global depending on Singleton: the singleton is cached in the owner, so `child.resolve(G).s !== child.resolve(S)`. Spec needs to state this.
-- Per-request child containers will rebuild every parent singleton per request unless migrated to `inGlobalScope()`. This is the main migration cost.
-- **Scope naming.** Every surveyed container keeps `Singleton` meaning the shared, owner-cached instance and names the per-container behavior separately (`ContainerScoped`, `InstancePerLifetimeScope`, `Scoped`). This branch redefines `Singleton` and adds `Global`, which is what makes it a major. Additive alternative: keep `Singleton` shared but built from the owner's view (removes the bleed alone, no identity change), add `inContainerScope()` for the per-container instance. Same `resolveRegistration` rewrite either way. Decide before implementing.
-- **Captive dependency guard.** Global depending on Singleton is the trap Microsoft DI rejects at build time and Autofac throws on. Spec documents the consequence but adds no check.
-
-## Breaking change
-
-As specified: `child.resolve(X) === parent.resolve(X)` no longer holds for singletons. Migrate shared resources to `.inGlobalScope()`. Major release, changeset still to add. If the additive naming option is chosen instead, the bleed fix ships as a patch and `inContainerScope()` as a minor.
-
-## Tests
-
-- Failing, pinning the new contract (22): `registry/registry.test.ts` (2), `singletonBleed.test.ts`, `childContainer/singletonCrossResolution.test.ts`, `singletonDecoratorChain.test.ts`.
-- Will break when the fix lands (8): six in `singletons.test.ts`, one in `registry/registry.test.ts`, one in `container.test.ts` ("should resolve instance from parent container if not found in child container"). All assert cross-container identity.
-- Deferred until `inGlobalScope()` exists: `globalScope.test.ts` (8 scenarios listed in the spec).
-- `containerToken.test.ts` documents a separate inheritance limitation; unaffected.
-
-## Branch hygiene
-
-- `engines.node` is `>=24` but CI runs Node 22.x.
-- `bugs/` and `docs/SINGLETON_CACHE_KEY_COLLISION_TESTS.md` describe a bug already fixed in #12.
+- Design: `docs/2026-05-26-per-container-singleton-scoping-design.md` (revision 2, open items at the end)
+- Prior art: `docs/2026-09-14-scoping-prior-art.md`
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
