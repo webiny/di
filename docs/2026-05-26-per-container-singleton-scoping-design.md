@@ -416,6 +416,19 @@ confirm before implementation.
    needs an assertion on the child's result; duplicated `ServiceA`/`ServiceB` fixtures should be
    hoisted; unread `id` fields should go; "child overrides all deps" leaves `TemplateEngine`
    unoverridden.
+8. **Scope naming.** `docs/2026-09-14-scoping-prior-art.md` surveys how tsyringe, InversifyJS,
+   NestJS, Microsoft DI, Autofac, Spring, Guice, Symfony, Laravel and shaku scope shared instances.
+   Every one of them keeps `Singleton` (or its equivalent) meaning the shared, owner-cached
+   instance and gives the per-container behavior a separate name — `ContainerScoped`,
+   `InstancePerLifetimeScope`, `Scoped`. This design instead redefines `Singleton` and adds
+   `Global`, which is what makes the release a major. The additive alternative is spelled out under
+   "Open decision: scope naming" in that document: keep `Singleton` shared (owner-view deps and
+   decorators, which removes the bleed on its own) and add `inContainerScope()` for the
+   per-container instance. Same `resolveRegistration` rewrite either way; only the meaning of the
+   existing keyword differs.
+9. **Captive dependencies are unguarded.** Microsoft DI rejects a singleton consuming a scoped
+   service at build time; Autofac throws; Spring injects a scoped proxy. Open item 1 above is the
+   same trap and currently ships as documented behavior with no check.
 
 ## Breaking change
 
@@ -458,6 +471,8 @@ Remove the "Singleton bleed-through bug" entry from Known Issues once the fix la
 - **Separate `registerGlobal()` method.** Duplicates registration logic; every new scope would need
   a new method. Rejected in favor of the builder.
 - **Scope strategy objects.** Over-engineered for three scopes. Rejected.
+
+See `docs/2026-09-14-scoping-prior-art.md` for how other containers answer the same question.
 
 ## Related: ContainerToken self-registration
 

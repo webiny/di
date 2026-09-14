@@ -3,6 +3,7 @@
 Singletons registered in a parent container are polluted by child containers. The fix is designed and pinned by failing tests; the implementation in `src/Container.ts` is not started.
 
 Design: `docs/2026-05-26-per-container-singleton-scoping-design.md` (revision 2).
+Prior art: `docs/2026-09-14-scoping-prior-art.md` (how tsyringe, Autofac, Microsoft DI, Spring and others scope shared instances).
 
 ## Issues
 
@@ -32,10 +33,12 @@ Alternatives rejected in the spec: smart caching by dependency diff, fixing only
 - Child decorators applying to parent-owned transients, instances and factories is a behavior change. No existing test depends on the old behavior.
 - Global depending on Singleton: the singleton is cached in the owner, so `child.resolve(G).s !== child.resolve(S)`. Spec needs to state this.
 - Per-request child containers will rebuild every parent singleton per request unless migrated to `inGlobalScope()`. This is the main migration cost.
+- **Scope naming.** Every surveyed container keeps `Singleton` meaning the shared, owner-cached instance and names the per-container behavior separately (`ContainerScoped`, `InstancePerLifetimeScope`, `Scoped`). This branch redefines `Singleton` and adds `Global`, which is what makes it a major. Additive alternative: keep `Singleton` shared but built from the owner's view (removes the bleed alone, no identity change), add `inContainerScope()` for the per-container instance. Same `resolveRegistration` rewrite either way. Decide before implementing.
+- **Captive dependency guard.** Global depending on Singleton is the trap Microsoft DI rejects at build time and Autofac throws on. Spec documents the consequence but adds no check.
 
 ## Breaking change
 
-`child.resolve(X) === parent.resolve(X)` no longer holds for singletons. Migrate shared resources to `.inGlobalScope()`. Major release, changeset still to add.
+As specified: `child.resolve(X) === parent.resolve(X)` no longer holds for singletons. Migrate shared resources to `.inGlobalScope()`. Major release, changeset still to add. If the additive naming option is chosen instead, the bleed fix ships as a patch and `inContainerScope()` as a minor.
 
 ## Tests
 

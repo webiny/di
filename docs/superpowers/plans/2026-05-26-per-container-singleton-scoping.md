@@ -8,7 +8,10 @@
 
 **Tech Stack:** TypeScript 6, Vitest 4, pnpm, oxlint, oxfmt
 
-**Spec:** `docs/2026-05-26-per-container-singleton-scoping-design.md`
+> **Stale (2026-09-14):** written against revision 1 of the spec. The architecture line above (decorator chain walk, `resolveFrom.instances` only) is superseded by revision 2 findings F1 and F3, and the "Modify lines 222-261" reference no longer points at the right code. Regenerate from revision 2 once the scope naming decision in `docs/2026-09-14-scoping-prior-art.md` is made, since it changes which keyword the per-container scope uses. Tasks 1, 4 and 5 (tests) are done and still valid; 2, 3 and 6 are open.
+
+**Spec:** `docs/2026-05-26-per-container-singleton-scoping-design.md` (revision 2)
+**Prior art:** `docs/2026-09-14-scoping-prior-art.md`
 
 ---
 
