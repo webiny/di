@@ -271,22 +271,25 @@ export class Container {
     resolutionStack: Map<symbol, boolean>,
     resolveFrom: Container
   ): T {
-    if (registration.scope === LifetimeScope.Singleton) {
-      const existing = this.instances.get(registration);
-      if (existing) {
-        return existing;
-      }
+    const cache = this.getInstanceCache(registration.scope, resolveFrom);
+    if (cache?.has(registration)) {
+      return cache.get(registration);
     }
+
+    // A singleton is shared with every container below the one that registered it, so it is built
+    // from the registering container's view. Building it from the requester's view would bake one
+    // child's dependencies and decorators into the instance every other container gets.
+    const buildFrom = registration.scope === LifetimeScope.Singleton ? this : resolveFrom;
 
     resolutionStack.set(abstraction.token, true);
 
     const resolvedDeps = registration.dependencies.map(dep => {
       const [abstractionDep, depOptions] = Array.isArray(dep) ? dep : [dep, {}];
-      return resolveFrom.resolveInternal(
+      return buildFrom.resolveInternal(
         abstractionDep,
         new Map(resolutionStack),
         depOptions,
-        resolveFrom
+        buildFrom
       );
     });
 
@@ -295,15 +298,28 @@ export class Container {
       abstraction,
       instance,
       resolutionStack,
-      resolveFrom
+      buildFrom
     );
 
-    if (registration.scope === LifetimeScope.Singleton) {
-      this.instances.set(registration, decoratedInstance);
-    }
+    cache?.set(registration, decoratedInstance);
 
     resolutionStack.delete(abstraction.token);
     return decoratedInstance;
+  }
+
+  private getInstanceCache(
+    scope: LifetimeScope,
+    resolveFrom: Container
+  ): Map<Registration, any> | undefined {
+    if (scope === LifetimeScope.Singleton) {
+      return this.instances;
+    }
+
+    if (scope === LifetimeScope.Container) {
+      return resolveFrom.instances;
+    }
+
+    return undefined;
   }
 
   private resolveMultiple<T>(
@@ -367,7 +383,7 @@ export class Container {
     resolutionStack: Map<symbol, boolean>,
     resolveFrom: Container
   ): T {
-    const decorators = this.collectDecorators<T>(abstraction.token);
+    const decorators = resolveFrom.collectDecorators<T>(abstraction.token);
     let result = instance;
 
     for (const decorator of decorators) {
@@ -391,7 +407,21 @@ export class Container {
 class RegistrationBuilder<T> {
   constructor(private registration: Registration<T>) {}
 
+  /**
+   * One instance, shared by the registering container and every container below it. It is built
+   * from the registering container's view: dependencies and decorators registered in a child
+   * container never end up in it.
+   */
   inSingletonScope(): void {
     this.registration.scope = LifetimeScope.Singleton;
+  }
+
+  /**
+   * One instance per container that resolves it, built from that container's view and cached in
+   * it. Register once in a parent and every child container (for example, one per request) gets
+   * its own instance, with the child's dependencies and decorators, discarded with the child.
+   */
+  inContainerScope(): void {
+    this.registration.scope = LifetimeScope.Container;
   }
 }
