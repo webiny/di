@@ -194,17 +194,38 @@ describe("Decorator chain across the container hierarchy - transient, instance a
 });
 
 describe("Decorator chain across the container hierarchy - shared singleton", () => {
-  test("a child decorator does not reach the shared instance", () => {
+  test("a child decorator on a parent's singleton throws instead of being skipped", () => {
     const parent = new Container();
     parent.register(BaseServiceImpl).inSingletonScope();
     parent.registerDecorator(ParentDecoratorImpl);
     const child = parent.createChildContainer();
     child.registerDecorator(ChildDecoratorImpl);
 
-    const fromChild = child.resolve(Service);
+    expect(() => child.resolve(Service)).toThrow(
+      /Cannot apply decorator ChildDecorator to Service/
+    );
+    expect(parent.resolve(Service).execute()).toBe("parentDec(base)");
+  });
 
-    expect(fromChild.execute()).toBe("parentDec(base)");
-    expect(parent.resolve(Service)).toBe(fromChild);
+  test("the error also fires when the singleton is already cached", () => {
+    const parent = new Container();
+    parent.register(BaseServiceImpl).inSingletonScope();
+    parent.resolve(Service);
+    const child = parent.createChildContainer();
+    child.registerDecorator(ChildDecoratorImpl);
+
+    expect(() => child.resolve(Service)).toThrow(/Cannot apply decorator ChildDecorator/);
+  });
+
+  test("a child that registers its own implementation can decorate it", () => {
+    const parent = new Container();
+    parent.register(BaseServiceImpl).inSingletonScope();
+    const child = parent.createChildContainer();
+    child.register(BaseServiceImpl).inSingletonScope();
+    child.registerDecorator(ChildDecoratorImpl);
+
+    expect(child.resolve(Service).execute()).toBe("childDec(base)");
+    expect(parent.resolve(Service).execute()).toBe("base");
   });
 
   test("decorators registered above the registering container still apply", () => {
@@ -213,7 +234,6 @@ describe("Decorator chain across the container hierarchy - shared singleton", ()
     const owner = root.createChildContainer();
     owner.register(BaseServiceImpl).inSingletonScope();
     const child = owner.createChildContainer();
-    child.registerDecorator(ChildDecoratorImpl);
 
     expect(child.resolve(Service).execute()).toBe("parentDec(base)");
     expect(owner.resolve(Service)).toBe(child.resolve(Service));

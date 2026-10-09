@@ -235,9 +235,9 @@ Use it for state that must not outlive a child container, such as a per-request 
 
 Decorators are collected from the container that resolves the abstraction, plus its parents, applied parent first. Each one wraps the previous, so the resolving container's decorator ends up outermost: `ChildDec(RootDec(impl))`.
 
-The one exception is a singleton: its decorators come from the container that holds the registration, because a child's decorator would otherwise be baked into the instance every other container shares.
+The one exception is a singleton: its decorators come from the container that holds the registration, because a child's decorator would otherwise be baked into the instance every other container shares. A decorator registered in a child container for a singleton registered in a parent can never apply, so resolving the singleton from that child throws an error instead of skipping the decorator silently. Register the decorator where the singleton is registered, or use `inContainerScope()`.
 
-![Lifetimes and decorators across child containers: with inContainerScope, each container gets its own instance with its own decorators; with inSingletonScope, every container gets the one shared instance and child decorators are not applied](docs/images/lifetimes-and-decorators.png)
+![Lifetimes and decorators across child containers: with inContainerScope, each container gets its own instance with its own decorators; with inSingletonScope, every container gets the one shared instance and a child decorator throws an error](docs/images/lifetimes-and-decorators.png)
 
 ## Advanced Features
 

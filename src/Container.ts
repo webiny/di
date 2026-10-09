@@ -271,6 +271,10 @@ export class Container {
     resolutionStack: Map<symbol, boolean>,
     resolveFrom: Container
   ): T {
+    if (registration.scope === LifetimeScope.Singleton) {
+      this.assertNoDecoratorsBelow(abstraction, resolveFrom);
+    }
+
     const cache = this.getInstanceCache(registration.scope, resolveFrom);
     if (cache?.has(registration)) {
       return cache.get(registration);
@@ -369,6 +373,27 @@ export class Container {
     }
 
     return results;
+  }
+
+  /**
+   * A singleton only takes decorators from the container that registered it and that container's
+   * parents. A decorator registered between the resolving container and this one would never apply,
+   * so fail loudly instead of skipping it.
+   */
+  private assertNoDecoratorsBelow<T>(abstraction: Abstraction<T>, resolveFrom: Container): void {
+    let container: Container | undefined = resolveFrom;
+
+    while (container && container !== this) {
+      const decorators = container.decorators.get(abstraction.token);
+      if (decorators && decorators.length > 0) {
+        const decoratorName = decorators[0]!.decoratorClass.name;
+        throw new Error(
+          `Cannot apply decorator ${decoratorName} to ${abstraction.toString()}: it is registered in a child container, but ${abstraction.toString()} is a singleton registered in a parent container and is shared by every container below it. Register the decorator in the container that registers ${abstraction.toString()}, or register ${abstraction.toString()} with inContainerScope().`
+        );
+      }
+
+      container = container.parent;
+    }
   }
 
   private collectDecorators<T>(token: symbol): DecoratorRegistration<T>[] {
