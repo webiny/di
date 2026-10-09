@@ -33,12 +33,15 @@ Decorators are applied after resolution, in registration order.
 
 ## Child Container Semantics
 
-Child containers resolve dependencies starting from the **requesting** container (the one `resolve()` was called on), not from where the registration lives. This means a service registered in a parent can have its dependencies overridden by a child. The `resolveFrom` parameter in internal methods tracks this origin.
+Child containers resolve dependencies starting from the **requesting** container (the one `resolve()` was called on), not from where the registration lives. This means a service registered in a parent can have its dependencies and decorators overridden by a child. The `resolveFrom` parameter in internal methods tracks this origin.
+
+The exception is a singleton: it is shared by the whole hierarchy below its registering container, so it is built from that container's view (dependencies and decorators), never from the requester's.
 
 ## Lifetime Scopes
 
-- **Transient** (default) - New instance on every `resolve()` call.
-- **Singleton** - One instance per container where registered. Cached after first resolution (including decorators). Shared with all child containers that don't shadow the registration.
+- **Transient** (default) - New instance on every `resolve()` call. Built from the requesting container.
+- **Singleton** - One instance per registration, cached in the container where registered (including decorators) and shared with all child containers that don't shadow the registration. Built from the registering container's view.
+- **Container** - One instance per resolving container, cached in that container. Built from the requesting container's view. Registered once in a parent, it gives each child (for example, one per request) its own instance.
 
 ## Key Files
 
@@ -92,7 +95,7 @@ Run all three in order. All must pass — this matches CI.
 ```sh
 pnpm lint    # tsc (type errors) + oxlint (lint) + oxfmt --check (formatting)
 pnpm build   # rslib build → dist/index.js + dist/index.d.ts
-pnpm test    # vitest --run --typecheck (46 tests + type-level tests)
+pnpm test    # vitest --run --typecheck (100 tests + type-level tests)
 ```
 
 If `oxfmt --check` fails, fix with `pnpm oxfmt --write <file>`. Do not use prettier.
@@ -105,6 +108,8 @@ GitHub Actions on every push: `pnpm install --frozen-lockfile && pnpm lint && pn
 
 - `__tests__/container.test.ts` - Core registration, resolution, decorators, composites, factories, error cases, type shorthand tests.
 - `__tests__/singletons.test.ts` - Singleton lifetime across parent/child hierarchy.
+- `__tests__/containerScope.test.ts` - Container scope (one instance per resolving container) and shared singletons built from the registering container's view.
+- `__tests__/decoratorChain.test.ts` - Which container's decorators apply, per lifetime and registration type.
 - `__tests__/childContainer/` - Cross-container resolution bug tests with multi-level dependency override scenarios.
 - `__tests__/types.test-d.ts` - Compile-time type assertion tests.
 - `__tests__/setupEnv.ts` - Imports `reflect-metadata` globally for tests.

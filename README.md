@@ -206,11 +206,38 @@ container.register(UserRepositoryImpl); // default is transient
 
 ### Singleton
 
-A single instance is created and reused for all resolutions.
+A single instance is created and reused for all resolutions, including resolutions from child containers.
 
 ```typescript
 container.register(UserRepositoryImpl).inSingletonScope();
 ```
+
+The instance is built from the view of the container that holds the registration. Dependencies and decorators registered in a child container never end up in it, so it is the same instance no matter which container resolves it first.
+
+### Container
+
+One instance per container that resolves it. Register it once in a parent, and every child container gets its own instance, built from the child's view (the child's dependencies and decorators) and cached in the child. Within one container, it behaves like a singleton.
+
+```typescript
+const root = new Container();
+root.register(RequestCacheImpl).inContainerScope();
+
+const request1 = root.createChildContainer();
+const request2 = root.createChildContainer();
+
+request1.resolve(RequestCache) === request1.resolve(RequestCache); // true
+request1.resolve(RequestCache) === request2.resolve(RequestCache); // false
+```
+
+Use it for state that must not outlive a child container, such as a per-request cache when you create one child container per request.
+
+### Decorators and lifetimes
+
+Decorators are collected from the container that resolves the abstraction, plus its parents, applied parent first. Each one wraps the previous, so the resolving container's decorator ends up outermost: `ChildDec(RootDec(impl))`.
+
+The one exception is a singleton: its decorators come from the container that holds the registration, because a child's decorator would otherwise be baked into the instance every other container shares. A decorator registered in a child container for a singleton registered in a parent can never apply, so resolving the singleton from that child throws an error instead of skipping the decorator silently. Register the decorator where the singleton is registered, or use `inContainerScope()`.
+
+![Lifetimes and decorators across child containers: with inContainerScope, each container gets its own instance with its own decorators; with inSingletonScope, every container gets the one shared instance and a child decorator throws an error](docs/images/lifetimes-and-decorators.png)
 
 ## Advanced Features
 

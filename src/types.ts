@@ -29,7 +29,8 @@ export interface InstanceRegistration<T = any> {
 
 export enum LifetimeScope {
   Transient,
-  Singleton
+  Singleton,
+  Container
 }
 
 export type IsOptionalValue<T> = undefined extends T ? T : never;
